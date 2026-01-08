@@ -12,17 +12,23 @@ Citadel POW 사용자들의 순위, 기부금액, 디스코드 게시물 반응�
 
 ## 📋 주요 기능
 
-### 1. 순위 시스템 (Rankings)
-- 주간별 POW 점수 순위
+### 1. 공부 세션 관리 (Study Sessions)
+- 공부 세션 기록 및 조회
+- 일일/주간 공부 통계
+- 자동 POW 점수 계산 및 업데이트
+- 사용자별 공부 이력 추적
+
+### 2. 순위 시스템 (Rankings)
+- 주간별 POW 점수 순위 (공부 시간 기반)
 - 사용자별 순위 이력 조회
 - 실시간 리더보드
 
-### 2. 기부 관리 (Donations)
+### 3. 기부 관리 (Donations)
 - 기부금액 기록 및 조회
 - 상위 기부자 랭킹
 - 사용자별 기부 통계
 
-### 3. 디스코드 통합 (Discord)
+### 4. 디스코드 통합 (Discord)
 - 게시물 반응 추적
 - 가장 많은 반응을 얻은 게시물 조회
 - 사용자별 게시물 분석
@@ -42,10 +48,12 @@ Citadel_POW_BackEND/
 │       ├── rankings.ts       # 순위 API
 │       ├── donations.ts      # 기부 API
 │       ├── discord.ts        # 디스코드 API
-│       └── users.ts          # 사용자 API
+│       ├── users.ts          # 사용자 API
+│       └── study-sessions.ts # 공부 세션 API
 ├── supabase/
 │   ├── migrations/
-│   │   └── 001_initial_schema.sql
+│   │   ├── 001_initial_schema.sql
+│   │   └── 002_add_study_sessions.sql
 │   └── seed.sql
 ├── package.json
 ├── tsconfig.json

@@ -85,3 +85,24 @@ export interface TopPost {
   total_engagement: number;
   created_at: string;
 }
+
+export interface StudySession {
+  id: string;
+  user_id: string;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  plan_text?: string;
+  photo_url?: string;
+  created_at: string;
+}
+
+export interface UserStudyStats {
+  discord_username: string;
+  discord_avatar?: string;
+  discord_id: string;
+  total_sessions: number;
+  total_study_minutes: number;
+  avg_session_minutes: number;
+  last_study_at: string;
+}
