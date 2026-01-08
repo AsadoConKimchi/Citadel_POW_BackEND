@@ -1,0 +1,7 @@
+# Supabase 설정
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-here
+
+# Discord Bot (선택사항)
+DISCORD_BOT_TOKEN=your-discord-bot-token
+DISCORD_WEBHOOK_URL=your-webhook-url

@@ -1,0 +1,30 @@
+{
+  "name": "citadel-pow-backend",
+  "version": "1.0.0",
+  "description": "Citadel POW Backend API using Cloudflare Workers and Supabase",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest"
+  },
+  "keywords": [
+    "cloudflare-workers",
+    "supabase",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^3.78.0",
+    "vitest": "^1.0.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "hono": "^3.11.7",
+    "zod": "^3.22.4"
+  }
+}

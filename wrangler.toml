@@ -1,0 +1,20 @@
+name = "citadel-pow-backend"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Supabase 환경 변수 설정 (wrangler secret put으로 설정해야 함)
+# wrangler secret put SUPABASE_URL
+# wrangler secret put SUPABASE_ANON_KEY
+
+[vars]
+ENVIRONMENT = "production"
+
+# CORS 설정
+[env.production]
+name = "citadel-pow-backend"
+routes = [
+  { pattern = "api.citadel-pow.com/*", zone_name = "citadel-pow.com" }
+]
+
+[env.development]
+name = "citadel-pow-backend-dev"
