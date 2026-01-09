@@ -31,7 +31,14 @@ export interface Donation {
   user_id: string;
   amount: number;
   currency: string;
-  message?: string;
+  date: string; // YYYY-MM-DD
+  duration_seconds?: number;
+  duration_minutes?: number;
+  donation_mode?: string;
+  donation_scope?: string;
+  session_id?: string;
+  note?: string;
+  message?: string; // deprecated, use note
   transaction_id?: string;
   status: 'pending' | 'completed' | 'failed';
   created_at: string;

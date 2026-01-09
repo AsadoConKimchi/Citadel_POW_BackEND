@@ -141,9 +141,16 @@ app.get('/user/:discordId', async (c) => {
 
 const createDonationSchema = z.object({
   discord_id: z.string(),
-  amount: z.number().positive(),
-  currency: z.string().default('USD'),
-  message: z.string().optional(),
+  amount: z.number().int().positive(),
+  currency: z.string().default('SAT'),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // YYYY-MM-DD
+  duration_seconds: z.number().int().min(0).optional(),
+  duration_minutes: z.number().int().min(0).optional(),
+  donation_mode: z.string().default('pow-writing'),
+  donation_scope: z.string().default('session'),
+  session_id: z.string().optional(),
+  note: z.string().optional(),
+  message: z.string().optional(), // deprecated
   transaction_id: z.string().optional(),
 });
 
@@ -169,6 +176,13 @@ app.post('/', async (c) => {
         user_id: userData.id,
         amount: validated.amount,
         currency: validated.currency,
+        date: validated.date || new Date().toISOString().split('T')[0],
+        duration_seconds: validated.duration_seconds,
+        duration_minutes: validated.duration_minutes,
+        donation_mode: validated.donation_mode,
+        donation_scope: validated.donation_scope,
+        session_id: validated.session_id,
+        note: validated.note || validated.message,
         message: validated.message,
         transaction_id: validated.transaction_id,
         status: 'pending',
