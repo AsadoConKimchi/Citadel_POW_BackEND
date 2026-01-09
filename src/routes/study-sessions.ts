@@ -119,15 +119,19 @@ const createStudySessionSchema = z.object({
   discord_id: z.string(),
   start_time: z.string().datetime(),
   end_time: z.string().datetime(),
-  duration_minutes: z.number().int().positive(),
-  plan_text: z.string().optional(),
-  photo_url: z.string().url().optional(),
+  duration_minutes: z.number().int().min(0), // 0분 이상 허용 (테스트용)
+  plan_text: z.string().optional().nullable(),
+  photo_url: z.string().url().optional().nullable(),
 });
 
 app.post('/', async (c) => {
   try {
     const body = await c.req.json();
+    console.log('📥 Received study session request:', JSON.stringify(body));
+
     const validated = createStudySessionSchema.parse(body);
+    console.log('✅ Validation passed');
+
     const supabase = createSupabaseClient(c.env);
 
     // 사용자 조회
@@ -156,17 +160,25 @@ app.post('/', async (c) => {
       .single();
 
     if (error) {
+      console.error('❌ Supabase insert error:', error);
       return c.json({ error: error.message }, 500);
     }
 
+    console.log('✅ Study session created successfully');
     return c.json({
       success: true,
       data: data as StudySession,
     }, 201);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return c.json({ error: 'Invalid request body', details: error.errors }, 400);
+      console.error('❌ Zod validation error:', JSON.stringify(error.errors));
+      return c.json({
+        error: 'Invalid request body',
+        details: error.errors,
+        message: 'Validation failed. Check the details field for more information.'
+      }, 400);
     }
+    console.error('❌ Unexpected error:', error);
     return c.json({ error: 'Failed to create study session' }, 500);
   }
 });
@@ -177,9 +189,9 @@ const bulkCreateSchema = z.object({
   sessions: z.array(z.object({
     start_time: z.string().datetime(),
     end_time: z.string().datetime(),
-    duration_minutes: z.number().int().positive(),
-    plan_text: z.string().optional(),
-    photo_url: z.string().url().optional(),
+    duration_minutes: z.number().int().min(0), // 0분 이상 허용 (테스트용)
+    plan_text: z.string().optional().nullable(),
+    photo_url: z.string().url().optional().nullable(),
   })),
 });
 
