@@ -121,7 +121,7 @@ const createStudySessionSchema = z.object({
   end_time: z.string().datetime(),
   duration_minutes: z.number().int().min(0), // 0분 이상 허용 (테스트용)
   plan_text: z.string().optional().nullable(),
-  photo_url: z.string().url().optional().nullable(),
+  photo_url: z.string().optional().nullable(), // URL 검증 제거 (base64 dataUrl 허용)
 });
 
 app.post('/', async (c) => {
@@ -191,7 +191,7 @@ const bulkCreateSchema = z.object({
     end_time: z.string().datetime(),
     duration_minutes: z.number().int().min(0), // 0분 이상 허용 (테스트용)
     plan_text: z.string().optional().nullable(),
-    photo_url: z.string().url().optional().nullable(),
+    photo_url: z.string().optional().nullable(), // URL 검증 제거 (base64 dataUrl 허용)
   })),
 });
 
