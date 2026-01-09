@@ -8,6 +8,7 @@ import donationsRouter from './routes/donations';
 import discordRouter from './routes/discord';
 import usersRouter from './routes/users';
 import studySessionsRouter from './routes/study-sessions';
+import accumulatedSatsRouter from './routes/accumulated-sats';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -25,6 +26,7 @@ app.get('/', (c) => {
       discord: '/api/discord',
       users: '/api/users',
       studySessions: '/api/study-sessions',
+      accumulatedSats: '/api/accumulated-sats',
     },
   });
 });
@@ -41,6 +43,7 @@ app.route('/api/donations', donationsRouter);
 app.route('/api/discord', discordRouter);
 app.route('/api/users', usersRouter);
 app.route('/api/study-sessions', studySessionsRouter);
+app.route('/api/accumulated-sats', accumulatedSatsRouter);
 
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404);

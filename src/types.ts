@@ -106,3 +106,17 @@ export interface UserStudyStats {
   avg_session_minutes: number;
   last_study_at: string;
 }
+
+export interface AccumulatedSats {
+  id: string;
+  user_id: string;
+  date: string; // YYYY-MM-DD
+  total_seconds: number;
+  total_sats: number;
+  plan_text?: string;
+  goal_minutes?: number;
+  donation_mode: string;
+  note?: string;
+  created_at: string;
+  updated_at: string;
+}
