@@ -152,6 +152,7 @@ const createDonationSchema = z.object({
   note: z.string().optional(),
   message: z.string().optional(), // deprecated
   transaction_id: z.string().optional(),
+  status: z.enum(['pending', 'completed', 'failed']).default('pending'),
 });
 
 app.post('/', async (c) => {
@@ -185,7 +186,7 @@ app.post('/', async (c) => {
         note: validated.note || validated.message,
         message: validated.message,
         transaction_id: validated.transaction_id,
-        status: 'pending',
+        status: validated.status,
       })
       .select()
       .single();
