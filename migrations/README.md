@@ -18,6 +18,27 @@
   - 누적 정보 스냅샷: `accumulated_sats`, `total_accumulated_sats`, `total_donated_sats`
   - `donation_mode`, `donation_scope` - nullable에서 필수로 변경
 
+### 002_discord_posts.sql
+**목적**: Discord 반응 수집 및 인기 기록 기능
+
+**변경사항**:
+- `discord_posts` 테이블 생성 (새 테이블)
+  - `message_id` (Discord 메시지 ID) - 고유값
+  - `user_id` (사용자 ID) - 외래 키
+  - `session_id` (세션 ID) - 외래 키 (nullable)
+  - `photo_url` (인증카드 URL)
+  - `plan_text` (목표 텍스트)
+  - `donation_mode` (POW 분야)
+  - `reaction_count` (반응 수)
+  - `reactions` (반응 상세 - JSONB)
+
+- `study_sessions` 테이블 확장
+  - `discord_message_id` (Discord 메시지 ID) - nullable
+  - `reaction_count` (반응 수) - 기본값 0
+
+- `popular_posts` 뷰 생성
+  - Discord 반응 수 기준 인기 게시물 조회용
+
 ---
 
 ## 🚀 실행 방법

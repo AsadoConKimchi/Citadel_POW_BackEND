@@ -178,3 +178,122 @@ export interface AccumulatedSats {
   created_at: string;
   updated_at: string;
 }
+
+// ============================================
+// Group Meetup Types
+// ============================================
+
+export interface GroupMeetup {
+  id: string;
+  organizer_id: string;
+
+  // Meet-up Information
+  title: string;
+  description?: string;
+  image_url?: string;
+  donation_mode: string;
+
+  // Schedule
+  scheduled_at: string;
+  duration_minutes: number;
+
+  // Donation Target
+  target_donation_amount: number;
+
+  // Status
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+
+  // QR Code
+  qr_code_url?: string;
+  qr_code_data?: string;
+  qr_code_expires_at?: string;
+
+  // Metadata
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+}
+
+export interface MeetupParticipant {
+  id: string;
+  meetup_id: string;
+  user_id: string;
+
+  // Participation Information
+  pledged_amount: number;
+  actual_donated_amount: number;
+
+  // Attendance Check
+  attended: boolean;
+  attended_at?: string;
+
+  // Donation Status
+  donation_status: 'pending' | 'completed' | 'skipped';
+  donated_at?: string;
+  donation_id?: string;
+
+  // Metadata
+  joined_at: string;
+}
+
+export interface MeetupWithStats {
+  id: string;
+  title: string;
+  description?: string;
+  image_url?: string;
+  donation_mode: string;
+  scheduled_at: string;
+  duration_minutes: number;
+  target_donation_amount: number;
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  created_at: string;
+
+  // Organizer info (from JOIN)
+  organizer: {
+    discord_id: string;
+    discord_username: string;
+    discord_avatar?: string;
+  };
+
+  // Aggregated stats
+  participant_count: number;
+  total_pledged: number;
+  attended_count?: number;
+  total_donated?: number;
+}
+
+export interface MeetupDetails extends GroupMeetup {
+  // Organizer info (from JOIN)
+  organizer: {
+    discord_id: string;
+    discord_username: string;
+    discord_avatar?: string;
+  };
+
+  // Participants list (from JOIN)
+  participants: Array<{
+    user_id: string;
+    discord_username: string;
+    discord_avatar?: string;
+    pledged_amount: number;
+    attended: boolean;
+    donation_status: 'pending' | 'completed' | 'skipped';
+    actual_donated_amount?: number;
+    joined_at: string;
+  }>;
+
+  // Aggregated stats
+  total_pledged: number;
+  participant_count: number;
+  attended_count: number;
+  total_donated: number;
+}
+
+export interface PendingMeetupDonation {
+  meetup_id: string;
+  title: string;
+  image_url?: string;
+  pledged_amount: number;
+  attended: boolean;
+  completed_at?: string;
+}
