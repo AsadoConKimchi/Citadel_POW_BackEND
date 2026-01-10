@@ -141,18 +141,35 @@ app.get('/user/:discordId', async (c) => {
 
 const createDonationSchema = z.object({
   discord_id: z.string(),
+
+  // 기부 정보
   amount: z.number().int().positive(),
   currency: z.string().default('SAT'),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // YYYY-MM-DD
-  duration_seconds: z.number().int().min(0).optional(),
-  duration_minutes: z.number().int().min(0).optional(),
   donation_mode: z.string().default('pow-writing'),
   donation_scope: z.string().default('session'),
-  session_id: z.string().optional(),
-  note: z.string().optional(),
-  message: z.string().optional(), // deprecated
-  transaction_id: z.string().optional(),
+  note: z.string().optional().nullable(),
+
+  // POW 정보 (기부 시점 스냅샷)
+  plan_text: z.string().optional().nullable(),
+  duration_minutes: z.number().int().min(0).optional().nullable(),
+  duration_seconds: z.number().int().min(0).optional().nullable(),
+  goal_minutes: z.number().int().min(0).optional().nullable(),
+  achievement_rate: z.number().min(0).max(200).optional().nullable(),
+  photo_url: z.string().optional().nullable(),
+
+  // 누적 정보 (기부 시점 스냅샷)
+  accumulated_sats: z.number().int().min(0).optional().nullable(),
+  total_accumulated_sats: z.number().int().min(0).optional().nullable(),
+  total_donated_sats: z.number().int().min(0).optional().nullable(),
+
+  // 결제 정보
+  transaction_id: z.string().optional().nullable(),
   status: z.enum(['pending', 'completed', 'failed']).default('pending'),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  session_id: z.string().optional().nullable(),
+
+  // Deprecated
+  message: z.string().optional().nullable(),
 });
 
 app.post('/', async (c) => {
@@ -177,16 +194,23 @@ app.post('/', async (c) => {
         user_id: userData.id,
         amount: validated.amount,
         currency: validated.currency,
-        date: validated.date || new Date().toISOString().split('T')[0],
-        duration_seconds: validated.duration_seconds,
-        duration_minutes: validated.duration_minutes,
         donation_mode: validated.donation_mode,
         donation_scope: validated.donation_scope,
-        session_id: validated.session_id,
-        note: validated.note || validated.message,
-        message: validated.message,
+        note: validated.note || validated.message || null,
+        plan_text: validated.plan_text,
+        duration_minutes: validated.duration_minutes,
+        duration_seconds: validated.duration_seconds,
+        goal_minutes: validated.goal_minutes,
+        achievement_rate: validated.achievement_rate,
+        photo_url: validated.photo_url,
+        accumulated_sats: validated.accumulated_sats,
+        total_accumulated_sats: validated.total_accumulated_sats,
+        total_donated_sats: validated.total_donated_sats,
         transaction_id: validated.transaction_id,
         status: validated.status,
+        date: validated.date || new Date().toISOString().split('T')[0],
+        session_id: validated.session_id,
+        message: validated.message,
       })
       .select()
       .single();
