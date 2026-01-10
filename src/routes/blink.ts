@@ -154,10 +154,10 @@ async function createBlinkInvoice(
 async function checkInvoiceStatus(
   endpoint: string,
   apiKey: string,
-  paymentHash: string
+  paymentRequest: string
 ): Promise<{ paid: boolean; confirmedAt?: string }> {
   try {
-    console.log('Checking invoice status for paymentHash:', paymentHash);
+    console.log('Checking invoice status for paymentRequest:', paymentRequest.substring(0, 50) + '...');
 
     const query = `
       query LnInvoicePaymentStatus($input: LnInvoicePaymentStatusInput!) {
@@ -172,7 +172,7 @@ async function checkInvoiceStatus(
 
     const variables = {
       input: {
-        paymentHash,
+        paymentRequest,
       },
     };
 
@@ -257,7 +257,7 @@ app.post('/create-invoice', async (c) => {
  * Check invoice payment status
  */
 const checkInvoiceSchema = z.object({
-  paymentHash: z.string(),
+  paymentRequest: z.string(),
 });
 
 app.post('/check-invoice', async (c) => {
@@ -272,7 +272,7 @@ app.post('/check-invoice', async (c) => {
     const status = await checkInvoiceStatus(
       c.env.BLINK_API_ENDPOINT,
       c.env.BLINK_API_KEY,
-      validated.paymentHash
+      validated.paymentRequest
     );
 
     return c.json({
