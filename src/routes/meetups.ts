@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, GroupMeetup, MeetupWithStats, MeetupDetails, PendingMeetupDonation } from '../types';
 import { createSupabaseClient } from '../supabase';
 import { z } from 'zod';
-import { sendMeetupDonationNotification } from '../utils/discord';
+import { sendMeetupDonationNotification, sendMeetupCancellationNotification } from '../utils/discord';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -718,6 +718,95 @@ app.post('/:id/update-status', async (c) => {
     }
     console.error('Exception in POST /meetups/:id/update-status:', error);
     return c.json({ error: 'Failed to update status' }, 500);
+  }
+});
+
+// ============================================
+// 8.5. POST /api/meetups/:id/cancel - Cancel Meet-up (Organizer only)
+// ============================================
+
+const cancelMeetupSchema = z.object({
+  discord_id: z.string(),
+});
+
+app.post('/:id/cancel', async (c) => {
+  try {
+    const meetupId = c.req.param('id');
+    const body = await c.req.json();
+    const validated = cancelMeetupSchema.parse(body);
+    const supabase = createSupabaseClient(c.env);
+
+    // Check if user is organizer
+    const isOrg = await isOrganizer(supabase, meetupId, validated.discord_id);
+    if (!isOrg) {
+      return c.json({ error: 'Only organizer can cancel meet-up' }, 403);
+    }
+
+    // Get meet-up details for Discord notification
+    const { data: meetupData, error: meetupError } = await supabase
+      .from('group_meetups')
+      .select(`
+        id,
+        title,
+        status,
+        organizer_id,
+        users:organizer_id (
+          discord_username
+        )
+      `)
+      .eq('id', meetupId)
+      .single();
+
+    if (meetupError || !meetupData) {
+      return c.json({ error: 'Meet-up not found' }, 404);
+    }
+
+    // Check if already completed or cancelled
+    if (meetupData.status === 'completed') {
+      return c.json({ error: 'Cannot cancel completed meet-up' }, 400);
+    }
+
+    if (meetupData.status === 'cancelled') {
+      return c.json({ error: 'Meet-up already cancelled' }, 400);
+    }
+
+    // Update status to cancelled
+    const { error: updateError } = await supabase
+      .from('group_meetups')
+      .update({
+        status: 'cancelled',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', meetupId);
+
+    if (updateError) {
+      return c.json({ error: updateError.message }, 500);
+    }
+
+    // Send Discord notification
+    const webhookUrl = c.env.DISCORD_WEBHOOK_URL;
+    if (webhookUrl) {
+      try {
+        await sendMeetupCancellationNotification(webhookUrl, {
+          organizerUsername: (meetupData as any).users.discord_username,
+          meetupTitle: meetupData.title,
+        });
+      } catch (webhookError) {
+        console.error('Failed to send Discord notification:', webhookError);
+        // Don't fail the request if webhook fails
+      }
+    }
+
+    return c.json({
+      success: true,
+      message: 'Meet-up cancelled successfully',
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Invalid request body', details: error.errors }, 400);
+    }
+    console.error('Exception in POST /meetups/:id/cancel:', error);
+    return c.json({ error: 'Failed to cancel meet-up' }, 500);
   }
 });
 

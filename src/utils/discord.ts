@@ -147,3 +147,27 @@ export async function sendDonationNotification(
     embeds: [embed],
   });
 }
+
+/**
+ * Send Meet-up cancellation notification
+ */
+export async function sendMeetupCancellationNotification(
+  webhookUrl: string,
+  params: {
+    organizerUsername: string;
+    meetupTitle: string;
+  }
+): Promise<void> {
+  const { organizerUsername, meetupTitle } = params;
+
+  const embed = createSimpleEmbed(
+    '❌ Meet-up 취소 안내',
+    `**${organizerUsername}**님이 생성했던 **${meetupTitle}** 밋업이 취소되었습니다.`,
+    0xED4245 // Red
+  );
+
+  await sendDiscordWebhook(webhookUrl, {
+    content: '📢 밋업 취소 안내',
+    embeds: [embed],
+  });
+}

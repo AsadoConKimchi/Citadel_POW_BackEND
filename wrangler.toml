@@ -5,10 +5,14 @@ compatibility_date = "2024-01-01"
 [vars]
 ENVIRONMENT = "production"
 
-# 민감한 환경변수는 Cloudflare Dashboard에서 설정:
+# Blink API 설정
+BLINK_API_ENDPOINT = "https://api.blink.sv/graphql"
+BLINK_LIGHTNING_ADDRESS = "becadecitadel@blink.sv"
+
+# Secret 환경변수는 wrangler secret put으로 설정:
+# - BLINK_API_KEY (Secret) ✅ 설정 완료
+# - DISCORD_WEBHOOK_URL (Secret) ✅ 설정 완료
+
+# Organizer 설정은 Dashboard에서:
 # - ORGANIZER_ROLE_IDS (Text)
 # - ORGANIZER_DISCORD_IDS (Text)
-# - DISCORD_WEBHOOK_URL (Secret)
-# - BLINK_API_ENDPOINT (Text)
-# - BLINK_API_KEY (Secret)
-# - BLINK_LIGHTNING_ADDRESS (Text)
