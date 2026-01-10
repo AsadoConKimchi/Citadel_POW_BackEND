@@ -4,3 +4,7 @@ compatibility_date = "2024-01-01"
 
 [vars]
 ENVIRONMENT = "production"
+# Organizer 역할 ID (콤마로 구분)
+ORGANIZER_ROLE_IDS = "1234567890,0987654321"
+# 또는 특정 Discord 사용자 ID를 Organizer로 지정
+ORGANIZER_DISCORD_IDS = "your_discord_id_1,your_discord_id_2"

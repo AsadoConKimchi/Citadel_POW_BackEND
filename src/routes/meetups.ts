@@ -82,6 +82,22 @@ async function verifyQRData(qrData: string, secretKey: string): Promise<{ valid:
 }
 
 /**
+ * Check if user has Organizer role
+ */
+function hasOrganizerRole(discordId: string, env: Env): boolean {
+  const allowedIds = env.ORGANIZER_DISCORD_IDS || '';
+  const idList = allowedIds.split(',').map(id => id.trim()).filter(id => id.length > 0);
+
+  if (idList.length === 0) {
+    // If no IDs configured, allow all users (development mode)
+    console.warn('ORGANIZER_DISCORD_IDS not configured - allowing all users');
+    return true;
+  }
+
+  return idList.includes(discordId);
+}
+
+/**
  * Check if user is the organizer of a meetup
  */
 async function isOrganizer(supabase: any, meetupId: string, discordId: string): Promise<boolean> {
@@ -133,8 +149,13 @@ app.post('/', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    // TODO: Check if user has Organizer role (implement role check)
-    // For now, allow all users to create meetups
+    // Check if user has Organizer role
+    if (!hasOrganizerRole(validated.discord_id, c.env)) {
+      return c.json({
+        success: false,
+        error: 'Only Organizers can create meet-ups'
+      }, 403);
+    }
 
     // Create meetup
     const { data, error } = await supabase

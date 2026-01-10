@@ -4,6 +4,8 @@ export interface Env {
   ENVIRONMENT: string;
   DISCORD_BOT_TOKEN?: string;
   DISCORD_WEBHOOK_URL?: string;
+  ORGANIZER_ROLE_IDS?: string;
+  ORGANIZER_DISCORD_IDS?: string;
 }
 
 export interface User {
