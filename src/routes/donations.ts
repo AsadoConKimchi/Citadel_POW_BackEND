@@ -11,85 +11,75 @@ app.get('/top', async (c) => {
     const category = c.req.query('category'); // donation_mode 필터
     const supabase = createSupabaseClient(c.env);
 
-    // 분야별 필터링이 있으면 직접 집계
+    // 모든 기부 데이터 가져오기 (분야 필터링 포함)
+    let query = supabase
+      .from('donations')
+      .select(`
+        user_id,
+        amount,
+        created_at,
+        users:user_id (
+          discord_id,
+          discord_username,
+          discord_avatar
+        )
+      `)
+      .eq('status', 'completed');
+
+    // 분야별 필터링
     if (category && category !== 'all') {
-      const { data: donations, error } = await supabase
-        .from('donations')
-        .select(`
-          user_id,
-          amount,
-          created_at,
-          users:user_id (
-            discord_username,
-            discord_avatar
-          )
-        `)
-        .eq('status', 'completed')
-        .eq('donation_mode', category);
-
-      if (error) {
-        return c.json({ error: error.message }, 500);
-      }
-
-      // 사용자별 집계
-      const userStats = new Map<string, {
-        discord_username: string;
-        discord_avatar?: string;
-        total_donated: number;
-        donation_count: number;
-        last_donation_at: string;
-      }>();
-
-      donations?.forEach((donation: any) => {
-        const user = donation.users;
-        if (!user) return;
-
-        const key = user.discord_username;
-        const existing = userStats.get(key);
-        if (existing) {
-          existing.total_donated += donation.amount || 0;
-          existing.donation_count += 1;
-          if (donation.created_at > existing.last_donation_at) {
-            existing.last_donation_at = donation.created_at;
-          }
-        } else {
-          userStats.set(key, {
-            discord_username: user.discord_username,
-            discord_avatar: user.discord_avatar,
-            total_donated: donation.amount || 0,
-            donation_count: 1,
-            last_donation_at: donation.created_at,
-          });
-        }
-      });
-
-      const topDonors = Array.from(userStats.values())
-        .sort((a, b) => b.total_donated - a.total_donated)
-        .slice(0, parseInt(limit));
-
-      return c.json({
-        success: true,
-        data: topDonors as TopDonor[],
-        count: topDonors.length,
-        category,
-      });
+      query = query.eq('donation_mode', category);
     }
 
-    // 전체 Top Donors (뷰 사용)
-    const { data, error } = await supabase
-      .from('top_donors')
-      .select('*')
-      .limit(parseInt(limit));
+    const { data: donations, error } = await query;
 
     if (error) {
       return c.json({ error: error.message }, 500);
     }
 
+    // 사용자별 집계 (user_id를 키로 사용)
+    const userStats = new Map<string, {
+      discord_id: string;
+      discord_username: string;
+      discord_avatar?: string;
+      total_donated: number;
+      donation_count: number;
+      last_donation_at: string;
+    }>();
+
+    donations?.forEach((donation: any) => {
+      const user = donation.users;
+      if (!user) return;
+
+      const key = donation.user_id; // user_id를 키로 사용 (더 정확)
+      const existing = userStats.get(key);
+      if (existing) {
+        existing.total_donated += donation.amount || 0;
+        existing.donation_count += 1;
+        if (donation.created_at > existing.last_donation_at) {
+          existing.last_donation_at = donation.created_at;
+        }
+      } else {
+        userStats.set(key, {
+          discord_id: user.discord_id,
+          discord_username: user.discord_username,
+          discord_avatar: user.discord_avatar,
+          total_donated: donation.amount || 0,
+          donation_count: 1,
+          last_donation_at: donation.created_at,
+        });
+      }
+    });
+
+    const topDonors = Array.from(userStats.values())
+      .sort((a, b) => b.total_donated - a.total_donated)
+      .slice(0, parseInt(limit));
+
     return c.json({
       success: true,
-      data: data as TopDonor[],
-      count: data?.length || 0,
-      category: 'all',
+      data: topDonors as TopDonor[],
+      count: topDonors.length,
+      category: category || 'all',
     });
   } catch (error) {
     console.error('Exception in /top:', error);
