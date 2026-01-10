@@ -85,6 +85,128 @@ app.get('/:messageId', async (c) => {
 });
 
 // ============================================
+// POST /api/discord-posts/share
+// POW 인증카드를 Discord에 공유 (Bot에게 전송 요청)
+// (프론트엔드에서 호출)
+// ============================================
+const shareToDiscordSchema = z.object({
+  discord_id: z.string(),
+  session_id: z.string(),
+  photo_url: z.string(),
+  plan_text: z.string(),
+  donation_mode: z.string(),
+  duration_seconds: z.number().int().min(0),
+});
+
+app.post('/share', async (c) => {
+  try {
+    const body = await c.req.json();
+    const validated = shareToDiscordSchema.parse(body);
+    const supabase = createSupabaseClient(c.env);
+
+    // Discord 환경변수 확인
+    const DISCORD_BOT_TOKEN = c.env.DISCORD_BOT_TOKEN;
+    const POW_CHANNEL_ID = c.env.POW_CHANNEL_ID;
+
+    if (!DISCORD_BOT_TOKEN || !POW_CHANNEL_ID) {
+      return c.json({ error: 'Discord configuration missing' }, 500);
+    }
+
+    // discord_id로 user_id 조회
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('discord_id', validated.discord_id)
+      .single();
+
+    if (userError || !user) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    // base64 이미지를 Buffer로 변환
+    const base64Data = validated.photo_url.replace(/^data:image\/\w+;base64,/, '');
+    const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+
+    // 시간 포맷팅
+    const minutes = Math.floor(validated.duration_seconds / 60);
+    const seconds = validated.duration_seconds % 60;
+    const timeText = seconds > 0 ? `${minutes}분 ${seconds}초` : `${minutes}분`;
+
+    // FormData 생성 (Discord API 형식)
+    const formData = new FormData();
+    const blob = new Blob([imageBuffer], { type: 'image/png' });
+    formData.append('files[0]', blob, 'pow-card.png');
+
+    const messageContent = {
+      content: `**${validated.plan_text}**\n⏱️ ${timeText}`,
+      attachments: [{ id: 0, filename: 'pow-card.png' }],
+    };
+    formData.append('payload_json', JSON.stringify(messageContent));
+
+    // Discord REST API로 메시지 전송
+    const discordResponse = await fetch(`https://discord.com/api/v10/channels/${POW_CHANNEL_ID}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bot ${DISCORD_BOT_TOKEN}`,
+      },
+      body: formData,
+    });
+
+    if (!discordResponse.ok) {
+      const error = await discordResponse.text();
+      console.error('Discord API 실패:', error);
+      return c.json({ error: 'Failed to send message to Discord' }, 500);
+    }
+
+    const discordMessage = await discordResponse.json() as any;
+    const messageId = discordMessage.id;
+
+    console.log('✅ Discord 메시지 전송 성공:', messageId);
+
+    // discord_posts 테이블에 저장
+    const { data: discordPost, error: postError } = await supabase
+      .from('discord_posts')
+      .insert({
+        message_id: messageId,
+        channel_id: POW_CHANNEL_ID,
+        user_id: user.id,
+        session_id: validated.session_id,
+        photo_url: validated.photo_url,
+        plan_text: validated.plan_text,
+        donation_mode: validated.donation_mode,
+        reaction_count: 0,
+        reactions: {},
+      })
+      .select()
+      .single();
+
+    if (postError) {
+      console.error('discord_posts 저장 실패:', postError);
+    } else {
+      console.log('✅ discord_posts 저장 성공:', messageId);
+    }
+
+    // study_sessions에 discord_message_id 업데이트
+    await supabase
+      .from('study_sessions')
+      .update({ discord_message_id: messageId })
+      .eq('id', validated.session_id);
+
+    return c.json({
+      success: true,
+      message_id: messageId,
+      channel_id: POW_CHANNEL_ID,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Invalid request data', details: error.errors }, 400);
+    }
+    console.error('Exception in POST /share:', error);
+    return c.json({ error: 'Failed to share to Discord' }, 500);
+  }
+});
+
+// ============================================
 // POST /api/discord-posts
 // 새 Discord 게시물 등록
 // (Discord 봇에서 메시지 생성 시 호출)

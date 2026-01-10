@@ -27,7 +27,10 @@ app.get('/user/:discordId', async (c) => {
 
     let query = supabase
       .from('study_sessions')
-      .select('*')
+      .select(`
+        *,
+        discord_posts(photo_url, reaction_count, message_id)
+      `)
       .eq('user_id', userData.id);
 
     // 분야별 필터링
