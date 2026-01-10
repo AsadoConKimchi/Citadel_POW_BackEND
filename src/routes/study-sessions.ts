@@ -29,7 +29,7 @@ app.get('/user/:discordId', async (c) => {
       .from('study_sessions')
       .select(`
         *,
-        discord_posts(photo_url, reaction_count, message_id)
+        discord_posts(photo_url, reaction_count, message_id, channel_id)
       `)
       .eq('user_id', userData.id);
 
