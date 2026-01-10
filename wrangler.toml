@@ -4,7 +4,11 @@ compatibility_date = "2024-01-01"
 
 [vars]
 ENVIRONMENT = "production"
-# Organizer 역할 ID (콤마로 구분)
-ORGANIZER_ROLE_IDS = "1234567890,0987654321"
-# 또는 특정 Discord 사용자 ID를 Organizer로 지정
-ORGANIZER_DISCORD_IDS = "your_discord_id_1,your_discord_id_2"
+
+# 민감한 환경변수는 Cloudflare Dashboard에서 설정:
+# - ORGANIZER_ROLE_IDS (Text)
+# - ORGANIZER_DISCORD_IDS (Text)
+# - DISCORD_WEBHOOK_URL (Secret)
+# - BLINK_API_ENDPOINT (Text)
+# - BLINK_API_KEY (Secret)
+# - BLINK_LIGHTNING_ADDRESS (Text)
