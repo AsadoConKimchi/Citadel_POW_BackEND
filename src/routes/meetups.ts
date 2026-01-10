@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, GroupMeetup, MeetupWithStats, MeetupDetails, PendingMeetupDonation } from '../types';
 import { createSupabaseClient } from '../supabase';
 import { z } from 'zod';
+import { sendMeetupDonationNotification } from '../utils/discord';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -83,18 +84,39 @@ async function verifyQRData(qrData: string, secretKey: string): Promise<{ valid:
 
 /**
  * Check if user has Organizer role
+ *
+ * Checks both Discord user ID and role ID
+ * @param discordId - User's Discord ID
+ * @param roles - User's Discord role IDs (optional)
+ * @param env - Environment variables
  */
-function hasOrganizerRole(discordId: string, env: Env): boolean {
-  const allowedIds = env.ORGANIZER_DISCORD_IDS || '';
-  const idList = allowedIds.split(',').map(id => id.trim()).filter(id => id.length > 0);
+function hasOrganizerRole(discordId: string, env: Env, roles?: string[]): boolean {
+  // Check Discord user ID whitelist
+  const allowedUserIds = env.ORGANIZER_DISCORD_IDS || '';
+  const userIdList = allowedUserIds.split(',').map(id => id.trim()).filter(id => id.length > 0);
 
-  if (idList.length === 0) {
-    // If no IDs configured, allow all users (development mode)
-    console.warn('ORGANIZER_DISCORD_IDS not configured - allowing all users');
+  if (userIdList.includes(discordId)) {
     return true;
   }
 
-  return idList.includes(discordId);
+  // Check Discord role ID
+  const allowedRoleIds = env.ORGANIZER_ROLE_IDS || '';
+  const roleIdList = allowedRoleIds.split(',').map(id => id.trim()).filter(id => id.length > 0);
+
+  if (roleIdList.length > 0 && roles && roles.length > 0) {
+    const hasRole = roles.some(roleId => roleIdList.includes(roleId));
+    if (hasRole) {
+      return true;
+    }
+  }
+
+  // If nothing is configured, allow all users (development mode)
+  if (userIdList.length === 0 && roleIdList.length === 0) {
+    console.warn('ORGANIZER_DISCORD_IDS and ORGANIZER_ROLE_IDS not configured - allowing all users');
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -123,6 +145,7 @@ async function isOrganizer(supabase: any, meetupId: string, discordId: string): 
 
 const createMeetupSchema = z.object({
   discord_id: z.string(),
+  roles: z.array(z.string()).optional(), // User's Discord role IDs
   title: z.string().min(1).max(200),
   description: z.string().optional(),
   image_url: z.string().url().optional(),
@@ -150,7 +173,7 @@ app.post('/', async (c) => {
     }
 
     // Check if user has Organizer role
-    if (!hasOrganizerRole(validated.discord_id, c.env)) {
+    if (!hasOrganizerRole(validated.discord_id, c.env, validated.roles)) {
       return c.json({
         success: false,
         error: 'Only Organizers can create meet-ups'
@@ -855,6 +878,46 @@ app.post('/:id/complete-donation', async (c) => {
 
     if (updateError) {
       return c.json({ error: updateError.message }, 500);
+    }
+
+    // Check if all participants have completed donations
+    const { data: allParticipants, error: allParticipantsError } = await supabase
+      .from('meetup_participants')
+      .select(`
+        id,
+        donation_status,
+        actual_donated_amount,
+        users:user_id (
+          discord_id,
+          discord_username
+        )
+      `)
+      .eq('meetup_id', meetupId)
+      .eq('attended', true);
+
+    if (!allParticipantsError && allParticipants) {
+      const allCompleted = allParticipants.every(p => p.donation_status === 'completed');
+
+      // Send Discord notification if all donations are complete
+      if (allCompleted && c.env.DISCORD_WEBHOOK_URL) {
+        try {
+          const totalAmount = allParticipants.reduce((sum, p) => sum + (p.actual_donated_amount || 0), 0);
+          const participants = allParticipants.map(p => ({
+            discord_username: (p.users as any)?.discord_username || 'Unknown',
+            discord_id: (p.users as any)?.discord_id || '',
+            donated_amount: p.actual_donated_amount || 0,
+          }));
+
+          await sendMeetupDonationNotification(c.env.DISCORD_WEBHOOK_URL, {
+            meetupTitle: meetup.title,
+            participants,
+            totalAmount,
+          });
+        } catch (webhookError) {
+          console.error('Discord webhook error:', webhookError);
+          // Don't fail the request if webhook fails
+        }
+      }
     }
 
     return c.json({

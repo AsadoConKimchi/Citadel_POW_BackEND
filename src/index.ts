@@ -11,6 +11,7 @@ import usersRouter from './routes/users';
 import studySessionsRouter from './routes/study-sessions';
 import accumulatedSatsRouter from './routes/accumulated-sats';
 import meetupsRouter from './routes/meetups';
+import blinkRouter from './routes/blink';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -31,6 +32,7 @@ app.get('/', (c) => {
       studySessions: '/api/study-sessions',
       accumulatedSats: '/api/accumulated-sats',
       meetups: '/api/meetups',
+      blink: '/api/blink',
     },
   });
 });
@@ -50,6 +52,7 @@ app.route('/api/users', usersRouter);
 app.route('/api/study-sessions', studySessionsRouter);
 app.route('/api/accumulated-sats', accumulatedSatsRouter);
 app.route('/api/meetups', meetupsRouter);
+app.route('/api/blink', blinkRouter);
 
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404);

@@ -6,6 +6,9 @@ export interface Env {
   DISCORD_WEBHOOK_URL?: string;
   ORGANIZER_ROLE_IDS?: string;
   ORGANIZER_DISCORD_IDS?: string;
+  BLINK_API_ENDPOINT?: string;
+  BLINK_API_KEY?: string;
+  BLINK_LIGHTNING_ADDRESS?: string;
 }
 
 export interface User {
