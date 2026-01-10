@@ -96,6 +96,11 @@ const shareToDiscordSchema = z.object({
   plan_text: z.string(),
   donation_mode: z.string(),
   duration_seconds: z.number().int().min(0),
+  // 기부 정보
+  donation_scope: z.string().optional(),
+  donation_sats: z.number().int().optional(),
+  total_donated_sats: z.number().int().optional(),
+  total_accumulated_sats: z.number().int().optional(),
 });
 
 app.post('/share', async (c) => {
@@ -147,15 +152,42 @@ app.post('/share', async (c) => {
     };
     const categoryName = categoryNames[validated.donation_mode] || '공부';
 
+    // BECA 총액 조회 (donations 테이블 합계)
+    const { data: donationsData } = await supabase
+      .from('donations')
+      .select('amount_sats');
+
+    const currentBECA = donationsData?.reduce((sum, d) => sum + (d.amount_sats || 0), 0) || 0;
+
+    // 기부 모드에 따라 메시지 형식 변경
+    const username = user.discord_username || '사용자';
+    const donationScope = validated.donation_scope || 'total';
+    const donationSats = validated.donation_sats || 0;
+    const totalDonatedSats = validated.total_donated_sats || 0;
+    const totalAccumulatedSats = validated.total_accumulated_sats || 0;
+
+    let messageText = '';
+
+    if (donationScope === 'session') {
+      // 즉시 기부
+      messageText = `**${username}**님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${currentBECA + donationSats}sats!`;
+    } else if (donationScope === 'total') {
+      // 적립 후 기부
+      messageText = `**${username}**님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 적립! 총 적립액 ${totalAccumulatedSats}sats!`;
+    } else {
+      // 적립액 기부 (daily, accumulated 등)
+      messageText = `**${username}**님께서 적립해두셨던 ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${currentBECA + donationSats}sats!`;
+    }
+
+    messageText += `\n⏱️ ${timeText}\n📝 ${validated.plan_text}`;
+
     // FormData 생성 (Discord API 형식)
     const formData = new FormData();
     const blob = new Blob([imageBuffer], { type: 'image/png' });
     formData.append('files[0]', blob, 'pow-card.png');
 
-    // Discord 메시지 내용 (사용자 멘션 + 분야 + 시간 + 목표)
-    const username = user.discord_username || '사용자';
     const messageContent = {
-      content: `**${username}**님께서 "${categoryName}"에서 POW 완료!\n⏱️ ${timeText}\n📝 ${validated.plan_text}`,
+      content: messageText,
       attachments: [{ id: 0, filename: 'pow-card.png' }],
     };
     formData.append('payload_json', JSON.stringify(messageContent));
