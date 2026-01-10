@@ -112,10 +112,10 @@ app.post('/share', async (c) => {
       return c.json({ error: 'Discord configuration missing' }, 500);
     }
 
-    // discord_id로 user_id 조회
+    // discord_id로 user_id와 사용자 정보 조회
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id')
+      .select('id, discord_username')
       .eq('discord_id', validated.discord_id)
       .single();
 
@@ -132,13 +132,30 @@ app.post('/share', async (c) => {
     const seconds = validated.duration_seconds % 60;
     const timeText = seconds > 0 ? `${minutes}분 ${seconds}초` : `${minutes}분`;
 
+    // 분야 이름 매핑
+    const categoryNames: Record<string, string> = {
+      'pow-writing': '글쓰기',
+      'pow-reading': '독서',
+      'pow-coding': '코딩',
+      'pow-language': '어학',
+      'pow-creative': '창작',
+      'pow-fitness': '운동',
+      'pow-meditation': '명상',
+      'pow-music': '음악',
+      'pow-art': '미술',
+      'pow-other': '기타',
+    };
+    const categoryName = categoryNames[validated.donation_mode] || '공부';
+
     // FormData 생성 (Discord API 형식)
     const formData = new FormData();
     const blob = new Blob([imageBuffer], { type: 'image/png' });
     formData.append('files[0]', blob, 'pow-card.png');
 
+    // Discord 메시지 내용 (사용자 멘션 + 분야 + 시간 + 목표)
+    const username = user.discord_username || '사용자';
     const messageContent = {
-      content: `**${validated.plan_text}**\n⏱️ ${timeText}`,
+      content: `**${username}**님께서 "${categoryName}"에서 POW 완료!\n⏱️ ${timeText}\n📝 ${validated.plan_text}`,
       attachments: [{ id: 0, filename: 'pow-card.png' }],
     };
     formData.append('payload_json', JSON.stringify(messageContent));
