@@ -64,20 +64,38 @@ export interface Donation {
 
 export interface DiscordPost {
   id: string;
-  user_id: string;
-  discord_message_id: string;
+  message_id: string;            // Discord 메시지 ID (unique)
   channel_id: string;
-  content: string;
+  user_id: string;
+  session_id?: string;           // 연결된 study_session ID (nullable)
+  photo_url?: string;            // 인증카드 이미지 URL
+  plan_text?: string;            // 목표 텍스트
+  donation_mode?: string;        // POW 분야
+  reaction_count: number;        // 총 반응 수
+  reactions: Record<string, number>; // 반응 상세 { "👍": 5, "❤️": 3 }
   created_at: string;
+  updated_at: string;
 }
 
-export interface PostReaction {
+export interface PopularPost {
   id: string;
-  post_id: string;
+  message_id: string;
+  channel_id: string;
+  user_id: string;
+  session_id?: string;
+  photo_url?: string;
+  plan_text?: string;
+  donation_mode?: string;
   reaction_count: number;
-  comment_count: number;
-  total_engagement: number;
-  updated_at: string;
+  reactions: Record<string, number>;
+  created_at: string;
+  // User 정보 (JOIN)
+  discord_username: string;
+  discord_avatar?: string;
+  // StudySession 정보 (LEFT JOIN)
+  duration_minutes?: number;
+  goal_minutes?: number;
+  achievement_rate?: number;
 }
 
 export interface LeaderboardEntry {
@@ -98,17 +116,15 @@ export interface TopDonor {
   last_donation_at: string;
 }
 
-export interface TopPost {
-  id: string;
-  content: string;
-  discord_message_id: string;
-  channel_id: string;
+export interface RankingEntry {
+  rank: number;
+  discord_id: string;
   discord_username: string;
   discord_avatar?: string;
-  reaction_count: number;
-  comment_count: number;
-  total_engagement: number;
-  created_at: string;
+  total_minutes?: number;        // POW 시간 기준
+  total_donations?: number;      // 기부 금액 기준
+  session_count?: number;
+  last_activity_at?: string;
 }
 
 export interface StudySession {
@@ -131,6 +147,10 @@ export interface StudySession {
 
   // 기부 연결
   donation_id?: string;          // 연결된 기부 ID (nullable)
+
+  // Discord 연동
+  discord_message_id?: string;   // Discord 메시지 ID (nullable)
+  reaction_count?: number;       // Discord 반응 수 (기본값 0)
 
   created_at: string;
 }

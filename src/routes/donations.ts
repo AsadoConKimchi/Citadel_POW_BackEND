@@ -8,8 +8,74 @@ const app = new Hono<{ Bindings: Env }>();
 app.get('/top', async (c) => {
   try {
     const limit = c.req.query('limit') || '50';
+    const category = c.req.query('category'); // donation_mode 필터
     const supabase = createSupabaseClient(c.env);
 
+    // 분야별 필터링이 있으면 직접 집계
+    if (category && category !== 'all') {
+      const { data: donations, error } = await supabase
+        .from('donations')
+        .select(`
+          user_id,
+          amount,
+          created_at,
+          users:user_id (
+            discord_username,
+            discord_avatar
+          )
+        `)
+        .eq('status', 'completed')
+        .eq('donation_mode', category);
+
+      if (error) {
+        return c.json({ error: error.message }, 500);
+      }
+
+      // 사용자별 집계
+      const userStats = new Map<string, {
+        discord_username: string;
+        discord_avatar?: string;
+        total_donated: number;
+        donation_count: number;
+        last_donation_at: string;
+      }>();
+
+      donations?.forEach((donation: any) => {
+        const user = donation.users;
+        if (!user) return;
+
+        const key = user.discord_username;
+        const existing = userStats.get(key);
+        if (existing) {
+          existing.total_donated += donation.amount || 0;
+          existing.donation_count += 1;
+          if (donation.created_at > existing.last_donation_at) {
+            existing.last_donation_at = donation.created_at;
+          }
+        } else {
+          userStats.set(key, {
+            discord_username: user.discord_username,
+            discord_avatar: user.discord_avatar,
+            total_donated: donation.amount || 0,
+            donation_count: 1,
+            last_donation_at: donation.created_at,
+          });
+        }
+      });
+
+      const topDonors = Array.from(userStats.values())
+        .sort((a, b) => b.total_donated - a.total_donated)
+        .slice(0, parseInt(limit));
+
+      return c.json({
+        success: true,
+        data: topDonors as TopDonor[],
+        count: topDonors.length,
+        category,
+      });
+    }
+
+    // 전체 Top Donors (뷰 사용)
     const { data, error } = await supabase
       .from('top_donors')
       .select('*')
@@ -23,8 +89,10 @@ app.get('/top', async (c) => {
       success: true,
       data: data as TopDonor[],
       count: data?.length || 0,
+      category: 'all',
     });
   } catch (error) {
+    console.error('Exception in /top:', error);
     return c.json({ error: 'Failed to fetch top donors' }, 500);
   }
 });
@@ -101,6 +169,8 @@ app.get('/stats', async (c) => {
 app.get('/user/:discordId', async (c) => {
   try {
     const discordId = c.req.param('discordId');
+    const month = c.req.query('month'); // YYYY-MM 형식
+    const category = c.req.query('category'); // donation_mode 필터
     const supabase = createSupabaseClient(c.env);
 
     const { data: userData, error: userError } = await supabase
@@ -113,11 +183,34 @@ app.get('/user/:discordId', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('donations')
       .select('*')
-      .eq('user_id', userData.id)
-      .order('created_at', { ascending: false });
+      .eq('user_id', userData.id);
+
+    // 분야별 필터링
+    if (category && category !== 'all') {
+      query = query.eq('donation_mode', category);
+    }
+
+    // 월별 필터링
+    if (month) {
+      try {
+        const [year, monthNum] = month.split('-');
+        const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+        const endDate = new Date(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999);
+
+        query = query
+          .gte('created_at', startDate.toISOString())
+          .lte('created_at', endDate.toISOString());
+      } catch (error) {
+        return c.json({ error: 'Invalid month format. Use YYYY-MM' }, 400);
+      }
+    }
+
+    query = query.order('created_at', { ascending: false });
+
+    const { data, error } = await query;
 
     if (error) {
       return c.json({ error: error.message }, 500);
@@ -133,8 +226,13 @@ app.get('/user/:discordId', async (c) => {
         donation_count: data?.length || 0,
         donations: data,
       },
+      filters: {
+        month,
+        category: category || 'all',
+      },
     });
   } catch (error) {
+    console.error('Exception in /user/:discordId:', error);
     return c.json({ error: 'Failed to fetch user donations' }, 500);
   }
 });

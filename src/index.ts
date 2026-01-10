@@ -6,6 +6,7 @@ import { loggerMiddleware } from './middleware/logger';
 import rankingsRouter from './routes/rankings';
 import donationsRouter from './routes/donations';
 import discordRouter from './routes/discord';
+import discordPostsRouter from './routes/discord-posts';
 import usersRouter from './routes/users';
 import studySessionsRouter from './routes/study-sessions';
 import accumulatedSatsRouter from './routes/accumulated-sats';
@@ -24,6 +25,7 @@ app.get('/', (c) => {
       rankings: '/api/rankings',
       donations: '/api/donations',
       discord: '/api/discord',
+      discordPosts: '/api/discord-posts',
       users: '/api/users',
       studySessions: '/api/study-sessions',
       accumulatedSats: '/api/accumulated-sats',
@@ -41,6 +43,7 @@ app.get('/health', (c) => {
 app.route('/api/rankings', rankingsRouter);
 app.route('/api/donations', donationsRouter);
 app.route('/api/discord', discordRouter);
+app.route('/api/discord-posts', discordPostsRouter);
 app.route('/api/users', usersRouter);
 app.route('/api/study-sessions', studySessionsRouter);
 app.route('/api/accumulated-sats', accumulatedSatsRouter);

@@ -5,11 +5,14 @@ import { z } from 'zod';
 
 const app = new Hono<{ Bindings: Env }>();
 
-// 특정 사용자의 공부 세션 조회
+// 특정 사용자의 공부 세션 조회 (필터링 지원)
 app.get('/user/:discordId', async (c) => {
   try {
     const discordId = c.req.param('discordId');
     const limit = c.req.query('limit') || '50';
+    const category = c.req.query('category'); // donation_mode 필터
+    const period = c.req.query('period'); // 'today' | 'week' | 'month'
+    const date = c.req.query('date'); // YYYY-MM-DD 형식
     const supabase = createSupabaseClient(c.env);
 
     const { data: userData, error: userError } = await supabase
@@ -22,12 +25,65 @@ app.get('/user/:discordId', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('study_sessions')
       .select('*')
-      .eq('user_id', userData.id)
+      .eq('user_id', userData.id);
+
+    // 분야별 필터링
+    if (category && category !== 'all') {
+      query = query.eq('donation_mode', category);
+    }
+
+    // 기간별 필터링
+    if (period) {
+      const now = new Date();
+      let startDate: Date;
+      let endDate: Date = new Date(now);
+      endDate.setHours(23, 59, 59, 999);
+
+      if (period === 'today') {
+        startDate = new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+      } else if (period === 'week') {
+        startDate = new Date(now);
+        startDate.setDate(now.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+      } else if (period === 'month') {
+        startDate = new Date(now);
+        startDate.setDate(1); // 이번 달 1일
+        startDate.setHours(0, 0, 0, 0);
+      } else {
+        return c.json({ error: 'Invalid period. Use "today", "week", or "month"' }, 400);
+      }
+
+      query = query
+        .gte('created_at', startDate.toISOString())
+        .lte('created_at', endDate.toISOString());
+    }
+
+    // 특정 날짜 필터링
+    if (date) {
+      try {
+        const targetDate = new Date(date);
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        query = query
+          .gte('created_at', startOfDay.toISOString())
+          .lte('created_at', endOfDay.toISOString());
+      } catch (error) {
+        return c.json({ error: 'Invalid date format. Use YYYY-MM-DD' }, 400);
+      }
+    }
+
+    query = query
       .order('created_at', { ascending: false })
       .limit(parseInt(limit));
+
+    const { data, error } = await query;
 
     if (error) {
       return c.json({ error: error.message }, 500);
@@ -37,8 +93,14 @@ app.get('/user/:discordId', async (c) => {
       success: true,
       data: data as StudySession[],
       count: data?.length || 0,
+      filters: {
+        category: category || 'all',
+        period,
+        date,
+      },
     });
   } catch (error) {
+    console.error('Exception in /user/:discordId:', error);
     return c.json({ error: 'Failed to fetch user study sessions' }, 500);
   }
 });
