@@ -156,37 +156,53 @@ async function checkInvoiceStatus(
   apiKey: string,
   paymentHash: string
 ): Promise<{ paid: boolean; confirmedAt?: string }> {
-  const query = `
-    query LnInvoicePaymentStatus($input: LnInvoicePaymentStatusInput!) {
-      lnInvoicePaymentStatus(input: $input) {
-        status
-        errors {
-          message
+  try {
+    console.log('Checking invoice status for paymentHash:', paymentHash);
+
+    const query = `
+      query LnInvoicePaymentStatus($input: LnInvoicePaymentStatusInput!) {
+        lnInvoicePaymentStatus(input: $input) {
+          status
+          errors {
+            message
+          }
         }
       }
+    `;
+
+    const variables = {
+      input: {
+        paymentHash,
+      },
+    };
+
+    const result = await blinkGraphqlRequest(endpoint, apiKey, query, variables);
+    console.log('Blink API response:', JSON.stringify(result, null, 2));
+
+    const payload = result?.lnInvoicePaymentStatus;
+
+    if (payload?.errors?.length) {
+      console.error('Blink API errors:', payload.errors);
+      throw new Error(payload.errors[0]?.message || 'Failed to check invoice status');
     }
-  `;
 
-  const variables = {
-    input: {
-      paymentHash,
-    },
-  };
+    const status = payload?.status;
+    const paid = status === 'PAID';
 
-  const result = await blinkGraphqlRequest(endpoint, apiKey, query, variables);
-  const payload = result?.lnInvoicePaymentStatus;
+    console.log('Invoice status:', status, 'Paid:', paid);
 
-  if (payload?.errors?.length) {
-    throw new Error(payload.errors[0]?.message || 'Failed to check invoice status');
+    return {
+      paid,
+      confirmedAt: paid ? new Date().toISOString() : undefined,
+    };
+  } catch (error) {
+    console.error('Error in checkInvoiceStatus:', error);
+    // 에러 발생 시 결제 안된 것으로 간주
+    return {
+      paid: false,
+      confirmedAt: undefined,
+    };
   }
-
-  const status = payload?.status;
-  const paid = status === 'PAID';
-
-  return {
-    paid,
-    confirmedAt: paid ? new Date().toISOString() : undefined,
-  };
 }
 
 // ============================================
