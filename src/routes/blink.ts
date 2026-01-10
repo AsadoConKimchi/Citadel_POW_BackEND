@@ -105,7 +105,7 @@ async function createBlinkInvoice(
   endpoint: string,
   apiKey: string,
   params: { sats: number; memo: string }
-): Promise<string> {
+): Promise<{ invoice: string; paymentHash: string }> {
   const walletId = await getBlinkBtcWalletId(endpoint, apiKey);
 
   const mutation = `
@@ -139,12 +139,13 @@ async function createBlinkInvoice(
   }
 
   const invoice = payload?.invoice?.paymentRequest;
+  const paymentHash = payload?.invoice?.paymentHash;
 
-  if (!invoice) {
+  if (!invoice || !paymentHash) {
     throw new Error('Invalid invoice response');
   }
 
-  return invoice;
+  return { invoice, paymentHash };
 }
 
 /**
@@ -210,7 +211,7 @@ app.post('/create-invoice', async (c) => {
     const body = await c.req.json();
     const validated = createInvoiceSchema.parse(body);
 
-    const invoice = await createBlinkInvoice(
+    const result = await createBlinkInvoice(
       c.env.BLINK_API_ENDPOINT,
       c.env.BLINK_API_KEY,
       {
@@ -222,7 +223,8 @@ app.post('/create-invoice', async (c) => {
     return c.json({
       success: true,
       data: {
-        invoice,
+        invoice: result.invoice,
+        paymentHash: result.paymentHash,
       },
     });
   } catch (error) {
