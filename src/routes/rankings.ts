@@ -125,6 +125,7 @@ app.get('/by-category', async (c) => {
         .from('study_sessions')
         .select(`
           user_id,
+          duration_seconds,
           duration_minutes,
           donation_mode,
           created_at,
@@ -151,7 +152,7 @@ app.get('/by-category', async (c) => {
         discord_id: string;
         discord_username: string;
         discord_avatar?: string;
-        total_minutes: number;
+        total_seconds: number;
         session_count: number;
         last_activity_at: string;
       }>();
@@ -160,9 +161,12 @@ app.get('/by-category', async (c) => {
         const user = session.users;
         if (!user) return;
 
+        // duration_seconds 우선 사용, 없으면 duration_minutes * 60
+        const seconds = session.duration_seconds ?? (session.duration_minutes ? session.duration_minutes * 60 : 0);
+
         const existing = userStats.get(user.discord_id);
         if (existing) {
-          existing.total_minutes += session.duration_minutes || 0;
+          existing.total_seconds += seconds;
           existing.session_count += 1;
           if (session.created_at > existing.last_activity_at) {
             existing.last_activity_at = session.created_at;
@@ -172,7 +176,7 @@ app.get('/by-category', async (c) => {
             discord_id: user.discord_id,
             discord_username: user.discord_username,
             discord_avatar: user.discord_avatar,
-            total_minutes: session.duration_minutes || 0,
+            total_seconds: seconds,
             session_count: 1,
             last_activity_at: session.created_at,
           });
@@ -181,14 +185,15 @@ app.get('/by-category', async (c) => {
 
       // 순위 계산 및 정렬
       rankings = Array.from(userStats.values())
-        .sort((a, b) => b.total_minutes - a.total_minutes)
+        .sort((a, b) => b.total_seconds - a.total_seconds)
         .slice(0, parseInt(limit))
         .map((user, index) => ({
           rank: index + 1,
           discord_id: user.discord_id,
           discord_username: user.discord_username,
           discord_avatar: user.discord_avatar,
-          total_minutes: user.total_minutes,
+          total_seconds: user.total_seconds,
+          total_minutes: Math.round(user.total_seconds / 60 * 10) / 10, // 소수점 1자리
           session_count: user.session_count,
           last_activity_at: user.last_activity_at,
         }));

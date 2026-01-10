@@ -126,7 +126,8 @@ export interface RankingEntry {
   discord_id: string;
   discord_username: string;
   discord_avatar?: string;
-  total_minutes?: number;        // POW 시간 기준
+  total_seconds?: number;        // POW 시간 (초 단위)
+  total_minutes?: number;        // POW 시간 (분 단위, 표시용)
   total_donations?: number;      // 기부 금액 기준
   session_count?: number;
   last_activity_at?: string;

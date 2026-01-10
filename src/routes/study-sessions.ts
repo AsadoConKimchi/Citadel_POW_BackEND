@@ -187,7 +187,8 @@ const createStudySessionSchema = z.object({
   // 시간 정보
   start_time: z.string().datetime(),
   end_time: z.string().datetime(),
-  duration_minutes: z.number().int().min(0),
+  duration_minutes: z.number().int().min(0).optional(), // 백워드 호환성
+  duration_seconds: z.number().int().min(0).optional(),
   goal_minutes: z.number().int().min(0),
   achievement_rate: z.number().min(0).max(200), // 달성률 0-200%
 
@@ -219,6 +220,10 @@ app.post('/', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
+    // duration_seconds 우선 사용, 없으면 duration_minutes 사용
+    const durationSeconds = validated.duration_seconds ?? (validated.duration_minutes ? validated.duration_minutes * 60 : 0);
+    const durationMinutes = Math.round(durationSeconds / 60);
+
     // 공부 세션 생성
     const { data, error } = await supabase
       .from('study_sessions')
@@ -228,7 +233,8 @@ app.post('/', async (c) => {
         plan_text: validated.plan_text,
         start_time: validated.start_time,
         end_time: validated.end_time,
-        duration_minutes: validated.duration_minutes,
+        duration_seconds: durationSeconds,
+        duration_minutes: durationMinutes,
         goal_minutes: validated.goal_minutes,
         achievement_rate: validated.achievement_rate,
         photo_url: validated.photo_url,
