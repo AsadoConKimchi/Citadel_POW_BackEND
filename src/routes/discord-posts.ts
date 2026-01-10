@@ -101,6 +101,7 @@ const shareToDiscordSchema = z.object({
   donation_sats: z.number().int().optional(),
   total_donated_sats: z.number().int().optional(),
   total_accumulated_sats: z.number().int().optional(),
+  donation_note: z.string().optional(),
 });
 
 app.post('/share', async (c) => {
@@ -132,25 +133,16 @@ app.post('/share', async (c) => {
     const base64Data = validated.photo_url.replace(/^data:image\/\w+;base64,/, '');
     const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
 
-    // 시간 포맷팅
-    const minutes = Math.floor(validated.duration_seconds / 60);
-    const seconds = validated.duration_seconds % 60;
-    const timeText = seconds > 0 ? `${minutes}분 ${seconds}초` : `${minutes}분`;
-
-    // 분야 이름 매핑
+    // 분야 이름 매핑 (이모티콘 포함)
     const categoryNames: Record<string, string> = {
-      'pow-writing': '글쓰기',
-      'pow-reading': '독서',
-      'pow-coding': '코딩',
-      'pow-language': '어학',
-      'pow-creative': '창작',
-      'pow-fitness': '운동',
-      'pow-meditation': '명상',
-      'pow-music': '음악',
-      'pow-art': '미술',
-      'pow-other': '기타',
+      'pow-writing': '✒️ 글쓰기',
+      'pow-music': '🎵 음악',
+      'pow-study': '📝 공부',
+      'pow-art': '🎨 그림',
+      'pow-reading': '📚 독서',
+      'pow-service': '✝️ 봉사',
     };
-    const categoryName = categoryNames[validated.donation_mode] || '공부';
+    const categoryName = categoryNames[validated.donation_mode] || '📝 공부';
 
     // BECA 총액 조회 (donations 테이블 합계)
     const { data: donationsData } = await supabase
@@ -160,26 +152,30 @@ app.post('/share', async (c) => {
     const currentBECA = donationsData?.reduce((sum, d) => sum + (d.amount_sats || 0), 0) || 0;
 
     // 기부 모드에 따라 메시지 형식 변경
-    const username = user.discord_username || '사용자';
     const donationScope = validated.donation_scope || 'total';
     const donationSats = validated.donation_sats || 0;
     const totalDonatedSats = validated.total_donated_sats || 0;
     const totalAccumulatedSats = validated.total_accumulated_sats || 0;
+    const donationNote = validated.donation_note?.trim() || '';
+    const username = user.discord_username || '사용자';
 
     let messageText = '';
 
     if (donationScope === 'session') {
       // 즉시 기부
-      messageText = `**${username}**님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${currentBECA + donationSats}sats!`;
+      messageText = `<@${validated.discord_id}>님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${currentBECA + donationSats}sats!`;
     } else if (donationScope === 'total') {
       // 적립 후 기부
-      messageText = `**${username}**님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 적립! 총 적립액 ${totalAccumulatedSats}sats!`;
+      messageText = `<@${validated.discord_id}>님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 적립! 총 적립액 ${totalAccumulatedSats}sats!`;
     } else {
       // 적립액 기부 (daily, accumulated 등)
-      messageText = `**${username}**님께서 적립해두셨던 ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${currentBECA + donationSats}sats!`;
+      messageText = `<@${validated.discord_id}>님께서 적립해두셨던 ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${currentBECA + donationSats}sats!`;
     }
 
-    messageText += `\n⏱️ ${timeText}\n📝 ${validated.plan_text}`;
+    // 기부 메모 추가
+    if (donationNote) {
+      messageText += `\n\n@${username}님의 한마디 : "${donationNote}"`;
+    }
 
     // FormData 생성 (Discord API 형식)
     const formData = new FormData();
