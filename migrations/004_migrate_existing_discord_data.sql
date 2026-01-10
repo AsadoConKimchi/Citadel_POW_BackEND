@@ -45,8 +45,10 @@ ADD COLUMN IF NOT EXISTS reaction_count INTEGER DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_study_sessions_discord_message_id ON study_sessions(discord_message_id);
 CREATE INDEX IF NOT EXISTS idx_study_sessions_reaction_count ON study_sessions(reaction_count DESC);
 
--- popular_posts 뷰 생성
-CREATE OR REPLACE VIEW popular_posts AS
+-- popular_posts 뷰 삭제 후 재생성
+DROP VIEW IF EXISTS popular_posts;
+
+CREATE VIEW popular_posts AS
 SELECT
   dp.id,
   dp.message_id,
