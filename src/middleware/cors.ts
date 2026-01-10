@@ -4,6 +4,7 @@ export const corsMiddleware = cors({
   origin: [
     'http://localhost:3000',
     'https://citadel-idioma-jipr.onrender.com',
+    'https://asadoconkimchi.github.io',
     'https://idioma.citadel.sx',
     'https://citadel-pow.com',
     'https://*.citadel-pow.com'
