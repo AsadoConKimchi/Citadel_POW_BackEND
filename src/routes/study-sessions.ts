@@ -117,11 +117,23 @@ app.get('/today/:discordId', async (c) => {
 // 공부 세션 생성
 const createStudySessionSchema = z.object({
   discord_id: z.string(),
+
+  // POW 정보
+  donation_mode: z.string(),
+  plan_text: z.string(),
+
+  // 시간 정보
   start_time: z.string().datetime(),
   end_time: z.string().datetime(),
-  duration_minutes: z.number().int().min(0), // 0분 이상 허용 (테스트용)
-  plan_text: z.string().optional().nullable(),
-  photo_url: z.string().optional().nullable(), // URL 검증 제거 (base64 dataUrl 허용)
+  duration_minutes: z.number().int().min(0),
+  goal_minutes: z.number().int().min(0),
+  achievement_rate: z.number().min(0).max(200), // 달성률 0-200%
+
+  // 인증카드
+  photo_url: z.string().optional().nullable(),
+
+  // 기부 연결
+  donation_id: z.string().optional().nullable(),
 });
 
 app.post('/', async (c) => {
@@ -150,11 +162,15 @@ app.post('/', async (c) => {
       .from('study_sessions')
       .insert({
         user_id: userData.id,
+        donation_mode: validated.donation_mode,
+        plan_text: validated.plan_text,
         start_time: validated.start_time,
         end_time: validated.end_time,
         duration_minutes: validated.duration_minutes,
-        plan_text: validated.plan_text,
+        goal_minutes: validated.goal_minutes,
+        achievement_rate: validated.achievement_rate,
         photo_url: validated.photo_url,
+        donation_id: validated.donation_id,
       })
       .select()
       .single();
@@ -187,11 +203,15 @@ app.post('/', async (c) => {
 const bulkCreateSchema = z.object({
   discord_id: z.string(),
   sessions: z.array(z.object({
+    donation_mode: z.string(),
+    plan_text: z.string(),
     start_time: z.string().datetime(),
     end_time: z.string().datetime(),
-    duration_minutes: z.number().int().min(0), // 0분 이상 허용 (테스트용)
-    plan_text: z.string().optional().nullable(),
-    photo_url: z.string().optional().nullable(), // URL 검증 제거 (base64 dataUrl 허용)
+    duration_minutes: z.number().int().min(0),
+    goal_minutes: z.number().int().min(0),
+    achievement_rate: z.number().min(0).max(200),
+    photo_url: z.string().optional().nullable(),
+    donation_id: z.string().optional().nullable(),
   })),
 });
 
@@ -215,11 +235,15 @@ app.post('/bulk', async (c) => {
     // 세션 데이터 준비
     const sessionsToInsert = validated.sessions.map(session => ({
       user_id: userData.id,
+      donation_mode: session.donation_mode,
+      plan_text: session.plan_text,
       start_time: session.start_time,
       end_time: session.end_time,
       duration_minutes: session.duration_minutes,
-      plan_text: session.plan_text,
+      goal_minutes: session.goal_minutes,
+      achievement_rate: session.achievement_rate,
       photo_url: session.photo_url,
+      donation_id: session.donation_id,
     }));
 
     // 일괄 삽입
