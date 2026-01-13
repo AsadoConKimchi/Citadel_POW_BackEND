@@ -66,6 +66,60 @@ app.post('/', async (c) => {
   }
 });
 
+// ============================================
+// PATCH /api/users/:discordId/settings
+// 사용자 설정 업데이트 (donation_scope 등)
+// ============================================
+const updateSettingsSchema = z.object({
+  donation_scope: z.enum(['session', 'total']).optional(),
+});
+
+app.patch('/:discordId/settings', async (c) => {
+  try {
+    const discordId = c.req.param('discordId');
+    const body = await c.req.json();
+    const validated = updateSettingsSchema.parse(body);
+    const supabase = createSupabaseClient(c.env);
+
+    // Discord ID로 사용자 조회
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('discord_id', discordId)
+      .single();
+
+    if (userError || !userData) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    // 설정 업데이트
+    const { data, error } = await supabase
+      .from('users')
+      .update(validated)
+      .eq('discord_id', discordId)
+      .select()
+      .single();
+
+    if (error) {
+      return c.json({ error: error.message }, 500);
+    }
+
+    return c.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Invalid request body', details: error.errors }, 400);
+    }
+    return c.json({ error: 'Failed to update settings' }, 500);
+  }
+});
+
+// ============================================
+// GET /api/users/:discordId/stats
+// 사용자 통계 조회
+// ============================================
 app.get('/:discordId/stats', async (c) => {
   try {
     const discordId = c.req.param('discordId');

@@ -129,10 +129,6 @@ app.post('/share', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    // base64 이미지를 Buffer로 변환
-    const base64Data = validated.photo_url.replace(/^data:image\/\w+;base64,/, '');
-    const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-
     // 분야 이름 매핑 (이모티콘 포함)
     const categoryNames: Record<string, string> = {
       'pow-writing': '✒️ 글쓰기',
@@ -177,25 +173,51 @@ app.post('/share', async (c) => {
       messageText += `\n\n@${username}님의 한마디 : "${donationNote}"`;
     }
 
-    // FormData 생성 (Discord API 형식)
-    const formData = new FormData();
-    const blob = new Blob([imageBuffer], { type: 'image/png' });
-    formData.append('files[0]', blob, 'pow-card.png');
+    // photo_url 유효성 검사 (빈 문자열, null, undefined 모두 거름)
+    const hasValidPhoto = validated.photo_url &&
+                          validated.photo_url.trim() !== '' &&
+                          validated.photo_url.startsWith('data:image/') &&
+                          validated.photo_url.includes('base64,') &&
+                          validated.photo_url.length > 100; // base64 이미지는 최소 100자 이상
 
-    const messageContent = {
-      content: messageText,
-      attachments: [{ id: 0, filename: 'pow-card.png' }],
-    };
-    formData.append('payload_json', JSON.stringify(messageContent));
+    let discordResponse;
 
-    // Discord REST API로 메시지 전송
-    const discordResponse = await fetch(`https://discord.com/api/v10/channels/${POW_CHANNEL_ID}/messages`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bot ${DISCORD_BOT_TOKEN}`,
-      },
-      body: formData,
-    });
+    if (hasValidPhoto) {
+      // 이미지가 있는 경우: FormData로 전송
+      const base64Data = validated.photo_url.replace(/^data:image\/\w+;base64,/, '');
+      const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+
+      const formData = new FormData();
+      const blob = new Blob([imageBuffer], { type: 'image/png' });
+      formData.append('files[0]', blob, 'pow-card.png');
+
+      const messageContent = {
+        content: messageText,
+        attachments: [{ id: 0, filename: 'pow-card.png' }],
+      };
+      formData.append('payload_json', JSON.stringify(messageContent));
+
+      // Discord REST API로 메시지 전송 (이미지 포함)
+      discordResponse = await fetch(`https://discord.com/api/v10/channels/${POW_CHANNEL_ID}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bot ${DISCORD_BOT_TOKEN}`,
+        },
+        body: formData,
+      });
+    } else {
+      // 이미지가 없는 경우: JSON으로 텍스트만 전송
+      discordResponse = await fetch(`https://discord.com/api/v10/channels/${POW_CHANNEL_ID}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bot ${DISCORD_BOT_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: messageText,
+        }),
+      });
+    }
 
     if (!discordResponse.ok) {
       const error = await discordResponse.text();

@@ -109,171 +109,73 @@ app.get('/user/:discordId', async (c) => {
 // ============================================
 // GET /api/rankings/by-category
 // 분야별 랭킹 조회 (POW 시간 또는 기부 금액 기준)
+// Optimized: RPC 함수 사용 + KV 캐싱 (5분 TTL)
 // ============================================
 app.get('/by-category', async (c) => {
   try {
     const type = c.req.query('type') || 'time'; // 'time' | 'donation'
     const category = c.req.query('category') || 'all';
     const limit = c.req.query('limit') || '10';
-    const supabase = createSupabaseClient(c.env);
 
+    // 캐시 키 생성
+    const cacheKey = `rankings:${type}:${category}:${limit}`;
+
+    // 1. 캐시 조회 시도
+    const cached = await c.env.CACHE.get(cacheKey, 'json');
+    if (cached) {
+      console.log(`Cache HIT: ${cacheKey}`);
+      return c.json({
+        success: true,
+        type,
+        category,
+        data: cached,
+        count: (cached as any[]).length,
+        cached: true, // 캐시에서 반환되었음을 표시
+      });
+    }
+
+    console.log(`Cache MISS: ${cacheKey}`);
+
+    // 2. 캐시 미스 - DB 조회
+    const supabase = createSupabaseClient(c.env);
     let rankings: RankingEntry[] = [];
 
     if (type === 'time') {
-      // POW 시간 기준 랭킹
-      let query = supabase
-        .from('study_sessions')
-        .select(`
-          user_id,
-          duration_seconds,
-          duration_minutes,
-          donation_mode,
-          created_at,
-          users:user_id (
-            discord_id,
-            discord_username,
-            discord_avatar
-          )
-        `);
-
-      if (category && category !== 'all') {
-        query = query.eq('donation_mode', category);
-      }
-
-      const { data, error } = await query;
+      // POW 시간 기준 랭킹 - RPC 함수 호출
+      const { data, error } = await supabase.rpc('get_pow_time_rankings', {
+        p_category: category,
+        p_limit: parseInt(limit),
+      });
 
       if (error) {
-        console.error('Error fetching study sessions:', error);
+        console.error('Error fetching POW time rankings:', error);
         return c.json({ error: error.message }, 500);
       }
 
-      // 사용자별 집계
-      const userStats = new Map<string, {
-        discord_id: string;
-        discord_username: string;
-        discord_avatar?: string;
-        total_seconds: number;
-        session_count: number;
-        last_activity_at: string;
-      }>();
-
-      data?.forEach((session: any) => {
-        const user = session.users;
-        if (!user) return;
-
-        // duration_seconds 우선 사용, 없으면 duration_minutes * 60
-        const seconds = session.duration_seconds ?? (session.duration_minutes ? session.duration_minutes * 60 : 0);
-
-        const existing = userStats.get(user.discord_id);
-        if (existing) {
-          existing.total_seconds += seconds;
-          existing.session_count += 1;
-          if (session.created_at > existing.last_activity_at) {
-            existing.last_activity_at = session.created_at;
-          }
-        } else {
-          userStats.set(user.discord_id, {
-            discord_id: user.discord_id,
-            discord_username: user.discord_username,
-            discord_avatar: user.discord_avatar,
-            total_seconds: seconds,
-            session_count: 1,
-            last_activity_at: session.created_at,
-          });
-        }
-      });
-
-      // 순위 계산 및 정렬
-      rankings = Array.from(userStats.values())
-        .sort((a, b) => b.total_seconds - a.total_seconds)
-        .slice(0, parseInt(limit))
-        .map((user, index) => ({
-          rank: index + 1,
-          discord_id: user.discord_id,
-          discord_username: user.discord_username,
-          discord_avatar: user.discord_avatar,
-          total_seconds: user.total_seconds,
-          total_minutes: Math.round(user.total_seconds / 60 * 10) / 10, // 소수점 1자리
-          session_count: user.session_count,
-          last_activity_at: user.last_activity_at,
-        }));
+      rankings = data || [];
 
     } else if (type === 'donation') {
-      // 기부 금액 기준 랭킹
-      let query = supabase
-        .from('donations')
-        .select(`
-          user_id,
-          amount,
-          donation_mode,
-          created_at,
-          users:user_id (
-            discord_id,
-            discord_username,
-            discord_avatar
-          )
-        `)
-        .eq('status', 'completed');
-
-      if (category && category !== 'all') {
-        query = query.eq('donation_mode', category);
-      }
-
-      const { data, error } = await query;
+      // 기부 금액 기준 랭킹 - RPC 함수 호출
+      const { data, error } = await supabase.rpc('get_donation_rankings', {
+        p_category: category,
+        p_limit: parseInt(limit),
+      });
 
       if (error) {
-        console.error('Error fetching donations:', error);
+        console.error('Error fetching donation rankings:', error);
         return c.json({ error: error.message }, 500);
       }
 
-      // 사용자별 집계
-      const userStats = new Map<string, {
-        discord_id: string;
-        discord_username: string;
-        discord_avatar?: string;
-        total_donations: number;
-        donation_count: number;
-        last_activity_at: string;
-      }>();
+      rankings = data || [];
 
-      data?.forEach((donation: any) => {
-        const user = donation.users;
-        if (!user) return;
-
-        const existing = userStats.get(user.discord_id);
-        if (existing) {
-          existing.total_donations += donation.amount || 0;
-          existing.donation_count += 1;
-          if (donation.created_at > existing.last_activity_at) {
-            existing.last_activity_at = donation.created_at;
-          }
-        } else {
-          userStats.set(user.discord_id, {
-            discord_id: user.discord_id,
-            discord_username: user.discord_username,
-            discord_avatar: user.discord_avatar,
-            total_donations: donation.amount || 0,
-            donation_count: 1,
-            last_activity_at: donation.created_at,
-          });
-        }
-      });
-
-      // 순위 계산 및 정렬
-      rankings = Array.from(userStats.values())
-        .sort((a, b) => b.total_donations - a.total_donations)
-        .slice(0, parseInt(limit))
-        .map((user, index) => ({
-          rank: index + 1,
-          discord_id: user.discord_id,
-          discord_username: user.discord_username,
-          discord_avatar: user.discord_avatar,
-          total_donations: user.total_donations,
-          last_activity_at: user.last_activity_at,
-        }));
     } else {
       return c.json({ error: 'Invalid type parameter. Use "time" or "donation"' }, 400);
     }
+
+    // 3. 캐시에 저장 (TTL: 5분)
+    await c.env.CACHE.put(cacheKey, JSON.stringify(rankings), {
+      expirationTtl: 300, // 5분
+    });
 
     return c.json({
       success: true,
@@ -281,6 +183,7 @@ app.get('/by-category', async (c) => {
       category,
       data: rankings,
       count: rankings.length,
+      cached: false, // DB에서 직접 조회되었음을 표시
     });
   } catch (error) {
     console.error('Exception in /by-category:', error);

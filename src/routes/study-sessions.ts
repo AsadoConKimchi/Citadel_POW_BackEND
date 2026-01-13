@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, StudySession, UserStudyStats } from '../types';
 import { createSupabaseClient } from '../supabase';
 import { z } from 'zod';
+import { invalidateRankingsCacheByCategory } from '../cache';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -252,6 +253,10 @@ app.post('/', async (c) => {
     }
 
     console.log('✅ Study session created successfully');
+
+    // 랭킹 캐시 무효화 (해당 분야 + 전체)
+    await invalidateRankingsCacheByCategory(c.env.CACHE, validated.donation_mode);
+
     return c.json({
       success: true,
       data: data as StudySession,

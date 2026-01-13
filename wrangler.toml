@@ -2,6 +2,11 @@ name = "citadel-pow-backend"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
+# KV 네임스페이스 (캐싱용)
+[[kv_namespaces]]
+binding = "CACHE"
+id = "8d3fc0aee23d466bb05f94cd9bd842ef"
+
 [vars]
 ENVIRONMENT = "production"
 

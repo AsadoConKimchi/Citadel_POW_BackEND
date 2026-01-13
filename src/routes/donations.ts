@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, TopDonor, Donation } from '../types';
 import { createSupabaseClient } from '../supabase';
 import { z } from 'zod';
+import { invalidateRankingsCacheByCategory } from '../cache';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -305,6 +306,11 @@ app.post('/', async (c) => {
 
     if (error) {
       return c.json({ error: error.message }, 500);
+    }
+
+    // 랭킹 캐시 무효화 (해당 분야 + 전체)
+    if (validated.donation_mode) {
+      await invalidateRankingsCacheByCategory(c.env.CACHE, validated.donation_mode);
     }
 
     return c.json({

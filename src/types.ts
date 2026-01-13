@@ -9,6 +9,9 @@ export interface Env {
   BLINK_API_ENDPOINT?: string;
   BLINK_API_KEY?: string;
   BLINK_LIGHTNING_ADDRESS?: string;
+
+  // Cloudflare KV for caching
+  CACHE: KVNamespace;
 }
 
 export interface User {
