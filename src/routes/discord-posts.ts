@@ -170,7 +170,7 @@ app.post('/share', async (c) => {
 
     // 기부 메모 추가
     if (donationNote) {
-      messageText += `\n\n@${username}님의 한마디 : "${donationNote}"`;
+      messageText += `\n\n<@${validated.discord_id}>님의 한마디 : "${donationNote}"`;
     }
 
     // photo_url 유효성 검사 (빈 문자열, null, undefined 모두 거름)
