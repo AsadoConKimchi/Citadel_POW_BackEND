@@ -140,12 +140,33 @@ app.post('/share', async (c) => {
     };
     const categoryName = categoryNames[validated.donation_mode] || '📝 공부';
 
-    // BECA 총액 조회 (donations 테이블 합계)
-    const { data: donationsData } = await supabase
-      .from('donations')
-      .select('amount_sats');
+    // ⭐️ BECA 총액 조회 (Blink API 실시간 잔액)
+    let becaBalance: number | null = null;
+    try {
+      const BLINK_BALANCE_URL = c.env.BLINK_BALANCE_URL || 'https://api.blink.sv/v1/wallet/balance';
+      const BLINK_API_KEY = c.env.BLINK_API_KEY;
 
-    const currentBECA = donationsData?.reduce((sum, d) => sum + (d.amount_sats || 0), 0) || 0;
+      if (BLINK_API_KEY) {
+        const balanceResponse = await fetch(BLINK_BALANCE_URL, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${BLINK_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          signal: AbortSignal.timeout(3000), // 3초 타임아웃
+        });
+
+        if (balanceResponse.ok) {
+          const balanceData = await balanceResponse.json();
+          becaBalance = balanceData.balance || null;
+          console.log(`✅ Blink API 잔액 조회 성공: ${becaBalance} sats`);
+        } else {
+          console.error('❌ Blink API 응답 오류:', balanceResponse.status);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Blink API 잔액 조회 실패:', error);
+    }
 
     // 기부 모드에 따라 메시지 형식 변경
     const donationScope = validated.donation_scope || 'total';
@@ -155,17 +176,22 @@ app.post('/share', async (c) => {
     const donationNote = validated.donation_note?.trim() || '';
     const username = user.discord_username || '사용자';
 
+    // ⭐️ BECA 잔액 텍스트 (조회 성공/실패에 따라 분기)
+    const becaBalanceText = becaBalance !== null
+      ? `${becaBalance}sats`
+      : '조회 중...';
+
     let messageText = '';
 
     if (donationScope === 'session') {
       // 즉시 기부
-      messageText = `<@${validated.discord_id}>님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${currentBECA + donationSats}sats!`;
+      messageText = `<@${validated.discord_id}>님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${becaBalanceText}!`;
     } else if (donationScope === 'total') {
       // 적립 후 기부
       messageText = `<@${validated.discord_id}>님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 적립! 총 적립액 ${totalAccumulatedSats}sats!`;
     } else {
       // 적립액 기부 (daily, accumulated 등)
-      messageText = `<@${validated.discord_id}>님께서 적립해두셨던 ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${currentBECA + donationSats}sats!`;
+      messageText = `<@${validated.discord_id}>님께서 적립해두셨던 ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${becaBalanceText}!`;
     }
 
     // 기부 메모 추가
