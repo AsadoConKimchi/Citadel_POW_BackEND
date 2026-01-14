@@ -93,10 +93,20 @@ app.get('/user/:discordId', async (c) => {
       return c.json({ error: error.message }, 500);
     }
 
+    // Algorithm v3: 런타임 achievement_rate 계산 추가
+    const dataWithAchievementRate = data?.map(session => ({
+      ...session,
+      achievement_rate: session.goal_seconds > 0
+        ? Math.floor((session.duration_seconds || session.duration_minutes * 60) / session.goal_seconds * 100)
+        : (session.goal_minutes > 0
+          ? Math.floor((session.duration_minutes / session.goal_minutes) * 100)
+          : 100),
+    }));
+
     return c.json({
       success: true,
-      data: data as StudySession[],
-      count: data?.length || 0,
+      data: dataWithAchievementRate as StudySession[],
+      count: dataWithAchievementRate?.length || 0,
       filters: {
         category: category || 'all',
         period,
@@ -168,19 +178,36 @@ app.get('/today/:discordId', async (c) => {
     }
 
     const totalMinutes = data?.reduce((sum, session) => sum + session.duration_minutes, 0) || 0;
+    const totalSeconds = data?.reduce((sum, session) => sum + (session.duration_seconds || session.duration_minutes * 60), 0) || 0;
+
+    // Algorithm v3: 런타임 achievement_rate 계산 추가
+    const dataWithAchievementRate = data?.map(session => ({
+      ...session,
+      achievement_rate: session.goal_seconds > 0
+        ? Math.floor((session.duration_seconds || session.duration_minutes * 60) / session.goal_seconds * 100)
+        : (session.goal_minutes > 0
+          ? Math.floor((session.duration_minutes / session.goal_minutes) * 100)
+          : 100),
+    }));
 
     return c.json({
       success: true,
-      data: data as StudySession[],
-      count: data?.length || 0,
+      data: dataWithAchievementRate as StudySession[],
+      count: dataWithAchievementRate?.length || 0,
       total_minutes: totalMinutes,
+      total_seconds: totalSeconds,
     });
   } catch (error) {
     return c.json({ error: 'Failed to fetch today study sessions' }, 500);
   }
 });
 
-// 공부 세션 생성
+// ============================================
+// 공부 세션 생성 (Algorithm v3)
+// - achievement_rate: 저장 안함 (런타임 계산)
+// - donation_id: 저장 안함 (donations.session_id로 단방향 참조)
+// - goal_seconds: 새로 추가
+// ============================================
 const createStudySessionSchema = z.object({
   discord_id: z.string(),
 
@@ -191,16 +218,17 @@ const createStudySessionSchema = z.object({
   // 시간 정보
   start_time: z.string().datetime(),
   end_time: z.string().datetime(),
-  duration_minutes: z.number().int().min(0).optional(), // 백워드 호환성
+  duration_minutes: z.number().int().min(0).optional(), // 백워드 호환성 (deprecated)
   duration_seconds: z.number().int().min(0).optional(),
-  goal_minutes: z.number().int().min(0),
-  achievement_rate: z.number().min(0).max(200), // 달성률 0-200%
+  goal_minutes: z.number().int().min(0).optional(), // 백워드 호환성 (deprecated)
+  goal_seconds: z.number().int().min(0).optional(),
 
   // 인증카드
   photo_url: z.string().optional().nullable(),
 
-  // 기부 연결
-  donation_id: z.string().optional().nullable(),
+  // Deprecated (하위 호환성)
+  achievement_rate: z.number().min(0).max(200).optional(), // 저장하지 않음
+  donation_id: z.string().optional().nullable(), // 저장하지 않음
 });
 
 app.post('/', async (c) => {
@@ -228,7 +256,11 @@ app.post('/', async (c) => {
     const durationSeconds = validated.duration_seconds ?? (validated.duration_minutes ? validated.duration_minutes * 60 : 0);
     const durationMinutes = Math.round(durationSeconds / 60);
 
-    // 공부 세션 생성
+    // goal_seconds 우선 사용, 없으면 goal_minutes 사용
+    const goalSeconds = validated.goal_seconds ?? (validated.goal_minutes ? validated.goal_minutes * 60 : 0);
+    const goalMinutes = Math.round(goalSeconds / 60);
+
+    // Algorithm v3: 공부 세션 생성 (achievement_rate, donation_id 저장 안함)
     const { data, error } = await supabase
       .from('study_sessions')
       .insert({
@@ -239,10 +271,11 @@ app.post('/', async (c) => {
         end_time: validated.end_time,
         duration_seconds: durationSeconds,
         duration_minutes: durationMinutes,
-        goal_minutes: validated.goal_minutes,
-        achievement_rate: validated.achievement_rate,
+        goal_seconds: goalSeconds,
+        goal_minutes: goalMinutes,
         photo_url: validated.photo_url,
-        donation_id: validated.donation_id,
+        // achievement_rate: 저장 안함 (런타임 계산)
+        // donation_id: 저장 안함 (donations.session_id로 단방향 참조)
       })
       .select()
       .single();
@@ -252,6 +285,11 @@ app.post('/', async (c) => {
       return c.json({ error: error.message }, 500);
     }
 
+    // 런타임 achievement_rate 계산
+    const achievementRate = goalSeconds > 0
+      ? Math.floor((durationSeconds / goalSeconds) * 100)
+      : 100; // 목표 없음 = 100%
+
     console.log('✅ Study session created successfully');
 
     // 랭킹 캐시 무효화 (해당 분야 + 전체)
@@ -259,7 +297,10 @@ app.post('/', async (c) => {
 
     return c.json({
       success: true,
-      data: data as StudySession,
+      data: {
+        ...data,
+        achievement_rate: achievementRate, // 런타임 계산값 포함
+      } as StudySession,
     }, 201);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -275,7 +316,10 @@ app.post('/', async (c) => {
   }
 });
 
+// ============================================
 // 여러 공부 세션 일괄 생성 (프론트엔드의 localStorage 마이그레이션용)
+// Algorithm v3: achievement_rate, donation_id 저장 안함
+// ============================================
 const bulkCreateSchema = z.object({
   discord_id: z.string(),
   sessions: z.array(z.object({
@@ -283,10 +327,13 @@ const bulkCreateSchema = z.object({
     plan_text: z.string(),
     start_time: z.string().datetime(),
     end_time: z.string().datetime(),
-    duration_minutes: z.number().int().min(0),
-    goal_minutes: z.number().int().min(0),
-    achievement_rate: z.number().min(0).max(200),
+    duration_minutes: z.number().int().min(0).optional(),
+    duration_seconds: z.number().int().min(0).optional(),
+    goal_minutes: z.number().int().min(0).optional(),
+    goal_seconds: z.number().int().min(0).optional(),
     photo_url: z.string().optional().nullable(),
+    // Deprecated
+    achievement_rate: z.number().min(0).max(200).optional(),
     donation_id: z.string().optional().nullable(),
   })),
 });
@@ -308,19 +355,24 @@ app.post('/bulk', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    // 세션 데이터 준비
-    const sessionsToInsert = validated.sessions.map(session => ({
-      user_id: userData.id,
-      donation_mode: session.donation_mode,
-      plan_text: session.plan_text,
-      start_time: session.start_time,
-      end_time: session.end_time,
-      duration_minutes: session.duration_minutes,
-      goal_minutes: session.goal_minutes,
-      achievement_rate: session.achievement_rate,
-      photo_url: session.photo_url,
-      donation_id: session.donation_id,
-    }));
+    // 세션 데이터 준비 (achievement_rate, donation_id 저장 안함)
+    const sessionsToInsert = validated.sessions.map(session => {
+      const durationSeconds = session.duration_seconds ?? (session.duration_minutes ? session.duration_minutes * 60 : 0);
+      const goalSeconds = session.goal_seconds ?? (session.goal_minutes ? session.goal_minutes * 60 : 0);
+
+      return {
+        user_id: userData.id,
+        donation_mode: session.donation_mode,
+        plan_text: session.plan_text,
+        start_time: session.start_time,
+        end_time: session.end_time,
+        duration_seconds: durationSeconds,
+        duration_minutes: Math.round(durationSeconds / 60),
+        goal_seconds: goalSeconds,
+        goal_minutes: Math.round(goalSeconds / 60),
+        photo_url: session.photo_url,
+      };
+    });
 
     // 일괄 삽입
     const { data, error } = await supabase
@@ -332,10 +384,18 @@ app.post('/bulk', async (c) => {
       return c.json({ error: error.message }, 500);
     }
 
+    // 런타임 achievement_rate 계산 추가
+    const dataWithAchievementRate = data?.map(session => ({
+      ...session,
+      achievement_rate: session.goal_seconds > 0
+        ? Math.floor((session.duration_seconds / session.goal_seconds) * 100)
+        : 100,
+    }));
+
     return c.json({
       success: true,
-      data: data as StudySession[],
-      count: data?.length || 0,
+      data: dataWithAchievementRate as StudySession[],
+      count: dataWithAchievementRate?.length || 0,
     }, 201);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -344,5 +404,19 @@ app.post('/bulk', async (c) => {
     return c.json({ error: 'Failed to create study sessions' }, 500);
   }
 });
+
+// ============================================
+// 헬퍼 함수: 세션 데이터에 런타임 achievement_rate 추가
+// ============================================
+function addAchievementRate(sessions: any[]) {
+  return sessions.map(session => ({
+    ...session,
+    achievement_rate: session.goal_seconds > 0
+      ? Math.floor((session.duration_seconds || session.duration_minutes * 60) / session.goal_seconds * 100)
+      : (session.goal_minutes > 0
+        ? Math.floor((session.duration_minutes / session.goal_minutes) * 100)
+        : 100),
+  }));
+}
 
 export default app;

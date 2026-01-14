@@ -62,6 +62,7 @@ app.get('/user/:discordId', async (c) => {
 // ============================================
 // POST /api/accumulated-sats/add
 // 적립액 추가 (디스코드 공유 성공 시)
+// PARTIAL UNIQUE 제약조건으로 동일 세션 중복 적립 방지
 // ============================================
 const addSchema = z.object({
   discord_id: z.string(),
@@ -88,6 +89,7 @@ app.post('/add', async (c) => {
     }
 
     // 2. RPC 함수 호출 (트랜잭션 보장)
+    // PARTIAL UNIQUE 제약조건: 동일 session_id로 중복 add 시도 시 에러 발생
     const { data, error } = await supabase
       .rpc('add_accumulated_sats', {
         p_user_id: userData.id,
@@ -98,6 +100,14 @@ app.post('/add', async (c) => {
       .single();
 
     if (error) {
+      // PARTIAL UNIQUE 위반 (중복 적립 시도)
+      if (error.message.includes('unique') || error.code === '23505') {
+        console.log(`Duplicate add attempt for session: ${validated.session_id}`);
+        return c.json({
+          error: 'Already accumulated for this session',
+          code: 'DUPLICATE_SESSION',
+        }, 409);
+      }
       console.error('RPC error:', error);
       return c.json({ error: error.message }, 500);
     }
@@ -123,12 +133,14 @@ app.post('/add', async (c) => {
 // ============================================
 // POST /api/accumulated-sats/deduct
 // 적립액 차감 (기부 완료 시)
+// expected_balance: 낙관적 잠금 (선택사항)
 // ============================================
 const deductSchema = z.object({
   discord_id: z.string(),
   amount: z.number().int().positive(),
   donation_id: z.string().uuid().optional().nullable(),
   note: z.string().optional().nullable(),
+  expected_balance: z.number().int().min(0).optional().nullable(), // 낙관적 잠금용
 });
 
 app.post('/deduct', async (c) => {
@@ -148,20 +160,31 @@ app.post('/deduct', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    // 2. RPC 함수 호출 (트랜잭션 보장 + 잔액 체크)
+    // 2. RPC 함수 호출 (트랜잭션 보장 + 잔액 체크 + 낙관적 잠금)
     const { data, error } = await supabase
       .rpc('deduct_accumulated_sats', {
         p_user_id: userData.id,
         p_amount: validated.amount,
         p_donation_id: validated.donation_id || null,
         p_note: validated.note || null,
+        p_expected_balance: validated.expected_balance ?? null, // 낙관적 잠금
       })
       .single();
 
     if (error) {
       // 적립액 부족 에러
       if (error.message.includes('Insufficient accumulated sats')) {
-        return c.json({ error: error.message }, 400);
+        return c.json({
+          error: error.message,
+          code: 'INSUFFICIENT_BALANCE',
+        }, 400);
+      }
+      // 낙관적 잠금 실패 (잔액 불일치)
+      if (error.message.includes('Balance mismatch')) {
+        return c.json({
+          error: error.message,
+          code: 'BALANCE_MISMATCH',
+        }, 409);
       }
       console.error('RPC error:', error);
       return c.json({ error: error.message }, 500);

@@ -228,6 +228,12 @@ app.get('/user/:discordId', async (c) => {
   }
 });
 
+// ============================================
+// Algorithm v3: 간소화된 기부 스키마
+// - achievement_rate, total_donated_sats, total_accumulated_sats: 저장 안함 (런타임 계산)
+// - duration_*, goal_*: 저장 안함 (study_sessions에서 참조)
+// - 3단계 status: pending → paid → completed
+// ============================================
 const createDonationSchema = z.object({
   discord_id: z.string(),
 
@@ -238,27 +244,27 @@ const createDonationSchema = z.object({
   donation_scope: z.string().default('session'),
   note: z.string().optional().nullable(),
 
-  // POW 정보 (기부 시점 스냅샷)
+  // POW 정보 (간소화 - 참조용)
   plan_text: z.string().optional().nullable(),
+  photo_url: z.string().optional().nullable(),
+
+  // 누적 정보 (기부 시점 스냅샷 - 표시용)
+  accumulated_sats: z.number().int().min(0).optional().nullable(),
+
+  // 결제 정보
+  transaction_id: z.string().optional().nullable(),
+  status: z.enum(['pending', 'paid', 'completed', 'failed', 'cancelled']).default('pending'),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  session_id: z.string().uuid().optional().nullable(), // study_sessions FK
+
+  // Deprecated (하위 호환성)
+  message: z.string().optional().nullable(),
   duration_minutes: z.number().int().min(0).optional().nullable(),
   duration_seconds: z.number().int().min(0).optional().nullable(),
   goal_minutes: z.number().int().min(0).optional().nullable(),
   achievement_rate: z.number().min(0).max(200).optional().nullable(),
-  photo_url: z.string().optional().nullable(),
-
-  // 누적 정보 (기부 시점 스냅샷)
-  accumulated_sats: z.number().int().min(0).optional().nullable(),
   total_accumulated_sats: z.number().int().min(0).optional().nullable(),
   total_donated_sats: z.number().int().min(0).optional().nullable(),
-
-  // 결제 정보
-  transaction_id: z.string().optional().nullable(),
-  status: z.enum(['pending', 'completed', 'failed']).default('pending'),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  session_id: z.string().optional().nullable(),
-
-  // Deprecated
-  message: z.string().optional().nullable(),
 });
 
 app.post('/', async (c) => {
@@ -277,30 +283,35 @@ app.post('/', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
+    // Algorithm v3: 간소화된 insert
+    // - achievement_rate, total_donated_sats, total_accumulated_sats: 저장 안함
+    // - paid_at: status가 'paid'인 경우 현재 시간
+    const insertData: Record<string, any> = {
+      user_id: userData.id,
+      amount: validated.amount,
+      currency: validated.currency,
+      donation_mode: validated.donation_mode,
+      donation_scope: validated.donation_scope,
+      note: validated.note || validated.message || null,
+      plan_text: validated.plan_text,
+      photo_url: validated.photo_url,
+      accumulated_sats: validated.accumulated_sats,
+      transaction_id: validated.transaction_id,
+      status: validated.status,
+      date: validated.date || new Date().toISOString().split('T')[0],
+      session_id: validated.session_id,
+      // discord_shared: 생성 시점에는 false (Discord 공유 후 true로 변경)
+      discord_shared: false,
+    };
+
+    // status가 'paid'인 경우 paid_at 설정
+    if (validated.status === 'paid') {
+      insertData.paid_at = new Date().toISOString();
+    }
+
     const { data, error } = await supabase
       .from('donations')
-      .insert({
-        user_id: userData.id,
-        amount: validated.amount,
-        currency: validated.currency,
-        donation_mode: validated.donation_mode,
-        donation_scope: validated.donation_scope,
-        note: validated.note || validated.message || null,
-        plan_text: validated.plan_text,
-        duration_minutes: validated.duration_minutes,
-        duration_seconds: validated.duration_seconds,
-        goal_minutes: validated.goal_minutes,
-        achievement_rate: validated.achievement_rate,
-        photo_url: validated.photo_url,
-        accumulated_sats: validated.accumulated_sats,
-        total_accumulated_sats: validated.total_accumulated_sats,
-        total_donated_sats: validated.total_donated_sats,
-        transaction_id: validated.transaction_id,
-        status: validated.status,
-        date: validated.date || new Date().toISOString().split('T')[0],
-        session_id: validated.session_id,
-        message: validated.message,
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -322,6 +333,142 @@ app.post('/', async (c) => {
       return c.json({ error: 'Invalid request body', details: error.errors }, 400);
     }
     return c.json({ error: 'Failed to create donation' }, 500);
+  }
+});
+
+// ============================================
+// PATCH /api/donations/:donationId/status
+// 기부 상태 업데이트 (3단계 흐름)
+// pending → paid (결제 성공 시)
+// paid → completed (Discord 공유 성공 시)
+// ============================================
+const updateStatusSchema = z.object({
+  status: z.enum(['pending', 'paid', 'completed', 'failed', 'cancelled']),
+  transaction_id: z.string().optional().nullable(),
+  discord_shared: z.boolean().optional(),
+});
+
+app.patch('/:donationId/status', async (c) => {
+  try {
+    const donationId = c.req.param('donationId');
+    const body = await c.req.json();
+    const validated = updateStatusSchema.parse(body);
+    const supabase = createSupabaseClient(c.env);
+
+    // 1. 현재 기부 상태 조회
+    const { data: currentDonation, error: fetchError } = await supabase
+      .from('donations')
+      .select('status, paid_at')
+      .eq('id', donationId)
+      .single();
+
+    if (fetchError || !currentDonation) {
+      return c.json({ error: 'Donation not found' }, 404);
+    }
+
+    // 2. 상태 전이 검증
+    const currentStatus = currentDonation.status;
+    const newStatus = validated.status;
+
+    // 유효한 상태 전이만 허용
+    const validTransitions: Record<string, string[]> = {
+      pending: ['paid', 'failed', 'cancelled'],
+      paid: ['completed', 'failed', 'cancelled'],
+      completed: [], // 완료 후 변경 불가
+      failed: ['pending'], // 재시도 가능
+      cancelled: [], // 취소 후 변경 불가
+    };
+
+    if (!validTransitions[currentStatus]?.includes(newStatus)) {
+      return c.json({
+        error: `Invalid status transition: ${currentStatus} → ${newStatus}`,
+        code: 'INVALID_TRANSITION',
+      }, 400);
+    }
+
+    // 3. 업데이트 데이터 구성
+    const updateData: Record<string, any> = {
+      status: newStatus,
+    };
+
+    // pending → paid: paid_at 설정
+    if (currentStatus === 'pending' && newStatus === 'paid') {
+      updateData.paid_at = new Date().toISOString();
+      if (validated.transaction_id) {
+        updateData.transaction_id = validated.transaction_id;
+      }
+    }
+
+    // paid → completed: discord_shared 설정
+    if (currentStatus === 'paid' && newStatus === 'completed') {
+      updateData.discord_shared = validated.discord_shared ?? true;
+    }
+
+    // 4. 업데이트 실행
+    const { data, error } = await supabase
+      .from('donations')
+      .update(updateData)
+      .eq('id', donationId)
+      .select()
+      .single();
+
+    if (error) {
+      return c.json({ error: error.message }, 500);
+    }
+
+    return c.json({
+      success: true,
+      data,
+      transition: {
+        from: currentStatus,
+        to: newStatus,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Invalid request body', details: error.errors }, 400);
+    }
+    console.error('Exception in PATCH /:donationId/status:', error);
+    return c.json({ error: 'Failed to update donation status' }, 500);
+  }
+});
+
+// ============================================
+// GET /api/donations/:donationId
+// 단일 기부 조회
+// ============================================
+app.get('/:donationId', async (c) => {
+  try {
+    const donationId = c.req.param('donationId');
+    const supabase = createSupabaseClient(c.env);
+
+    const { data, error } = await supabase
+      .from('donations')
+      .select(`
+        *,
+        users:user_id (
+          discord_id,
+          discord_username,
+          discord_avatar
+        )
+      `)
+      .eq('id', donationId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return c.json({ error: 'Donation not found' }, 404);
+      }
+      return c.json({ error: error.message }, 500);
+    }
+
+    return c.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error('Exception in GET /:donationId:', error);
+    return c.json({ error: 'Failed to fetch donation' }, 500);
   }
 });
 
