@@ -102,6 +102,9 @@ const shareToDiscordSchema = z.object({
   total_donated_sats: z.number().int().optional(),
   total_accumulated_sats: z.number().int().optional(),
   donation_note: z.string().optional(),
+  // 동영상 첨부 (선택)
+  video_url: z.string().nullable().optional(),
+  video_filename: z.string().nullable().optional(),
 });
 
 app.post('/share', async (c) => {
@@ -206,24 +209,51 @@ app.post('/share', async (c) => {
                           validated.photo_url.includes('base64,') &&
                           validated.photo_url.length > 100; // base64 이미지는 최소 100자 이상
 
+    // video_url 유효성 검사
+    const hasValidVideo = validated.video_url &&
+                          validated.video_url.trim() !== '' &&
+                          validated.video_url.startsWith('data:video/') &&
+                          validated.video_url.includes('base64,') &&
+                          validated.video_url.length > 100;
+
     let discordResponse;
 
-    if (hasValidPhoto) {
-      // 이미지가 있는 경우: FormData로 전송
-      const base64Data = validated.photo_url.replace(/^data:image\/\w+;base64,/, '');
-      const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-
+    if (hasValidPhoto || hasValidVideo) {
+      // 이미지 또는 동영상이 있는 경우: FormData로 전송
       const formData = new FormData();
-      const blob = new Blob([imageBuffer], { type: 'image/png' });
-      formData.append('files[0]', blob, 'pow-card.png');
+      const attachments: { id: number; filename: string }[] = [];
+      let fileIndex = 0;
+
+      // 이미지 첨부
+      if (hasValidPhoto) {
+        const base64Data = validated.photo_url.replace(/^data:image\/\w+;base64,/, '');
+        const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        const blob = new Blob([imageBuffer], { type: 'image/png' });
+        formData.append(`files[${fileIndex}]`, blob, 'pow-card.png');
+        attachments.push({ id: fileIndex, filename: 'pow-card.png' });
+        fileIndex++;
+      }
+
+      // 동영상 첨부
+      if (hasValidVideo) {
+        const videoBase64 = validated.video_url!.replace(/^data:video\/\w+;base64,/, '');
+        const videoBuffer = Uint8Array.from(atob(videoBase64), c => c.charCodeAt(0));
+        const videoMimeMatch = validated.video_url!.match(/^data:(video\/\w+);base64,/);
+        const videoMime = videoMimeMatch ? videoMimeMatch[1] : 'video/mp4';
+        const videoFilename = validated.video_filename || 'pow-video.mp4';
+        const videoBlob = new Blob([videoBuffer], { type: videoMime });
+        formData.append(`files[${fileIndex}]`, videoBlob, videoFilename);
+        attachments.push({ id: fileIndex, filename: videoFilename });
+        fileIndex++;
+      }
 
       const messageContent = {
         content: messageText,
-        attachments: [{ id: 0, filename: 'pow-card.png' }],
+        attachments,
       };
       formData.append('payload_json', JSON.stringify(messageContent));
 
-      // Discord REST API로 메시지 전송 (이미지 포함)
+      // Discord REST API로 메시지 전송 (첨부파일 포함)
       discordResponse = await fetch(`https://discord.com/api/v10/channels/${POW_CHANNEL_ID}/messages`, {
         method: 'POST',
         headers: {
@@ -232,7 +262,7 @@ app.post('/share', async (c) => {
         body: formData,
       });
     } else {
-      // 이미지가 없는 경우: JSON으로 텍스트만 전송
+      // 첨부파일이 없는 경우: JSON으로 텍스트만 전송
       discordResponse = await fetch(`https://discord.com/api/v10/channels/${POW_CHANNEL_ID}/messages`, {
         method: 'POST',
         headers: {
