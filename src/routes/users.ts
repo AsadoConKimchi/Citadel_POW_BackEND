@@ -119,6 +119,7 @@ app.patch('/:discordId/settings', async (c) => {
 // ============================================
 // GET /api/users/:discordId/stats
 // 사용자 통계 조회
+// Algorithm v3: user_total_donated 테이블 사용 (효율적인 인덱스 조회)
 // ============================================
 app.get('/:discordId/stats', async (c) => {
   try {
@@ -135,7 +136,7 @@ app.get('/:discordId/stats', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    const [rankingResult, donationResult, postResult] = await Promise.all([
+    const [rankingResult, totalDonatedResult, postResult] = await Promise.all([
       supabase
         .from('rankings')
         .select('pow_score, rank')
@@ -144,11 +145,12 @@ app.get('/:discordId/stats', async (c) => {
         .limit(1)
         .single(),
 
+      // Algorithm v3: user_total_donated 테이블에서 조회 (트리거로 자동 업데이트됨)
       supabase
-        .from('donations')
-        .select('amount')
+        .from('user_total_donated')
+        .select('total_donated, donation_count, last_donated_at')
         .eq('user_id', userData.id)
-        .eq('status', 'completed'),
+        .single(),
 
       supabase
         .from('discord_posts')
@@ -156,10 +158,9 @@ app.get('/:discordId/stats', async (c) => {
         .eq('user_id', userData.id),
     ]);
 
-    const totalDonated = donationResult.data?.reduce(
-      (sum, d) => sum + parseFloat(d.amount.toString()),
-      0
-    ) || 0;
+    // user_total_donated 테이블에서 값 가져오기 (없으면 0)
+    const totalDonatedSats = totalDonatedResult.data?.total_donated || 0;
+    const donationCount = totalDonatedResult.data?.donation_count || 0;
 
     const totalEngagement = postResult.data?.reduce(
       (sum, p: any) => sum + (p.post_reactions?.[0]?.total_engagement || 0),
@@ -172,8 +173,10 @@ app.get('/:discordId/stats', async (c) => {
         user: userData,
         current_rank: rankingResult.data?.rank || null,
         current_score: rankingResult.data?.pow_score || 0,
-        total_donated: totalDonated,
-        donation_count: donationResult.data?.length || 0,
+        // Algorithm v3: 프론트엔드와 키 이름 통일
+        total_donated_sats: totalDonatedSats,
+        total_donated: totalDonatedSats,  // 하위호환성 유지
+        donation_count: donationCount,
         post_count: postResult.data?.length || 0,
         total_engagement: totalEngagement,
       },
