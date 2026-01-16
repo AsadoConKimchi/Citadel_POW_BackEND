@@ -8,7 +8,7 @@ import donationsRouter from './routes/donations';
 import discordRouter from './routes/discord';
 import discordPostsRouter from './routes/discord-posts';
 import usersRouter from './routes/users';
-import studySessionsRouter from './routes/study-sessions';
+import powSessionsRouter from './routes/pow-sessions';
 import accumulatedSatsRouter from './routes/accumulated-sats';
 import meetupsRouter from './routes/meetups';
 import blinkRouter from './routes/blink';
@@ -29,7 +29,8 @@ app.get('/', (c) => {
       discord: '/api/discord',
       discordPosts: '/api/discord-posts',
       users: '/api/users',
-      studySessions: '/api/study-sessions',
+      powSessions: '/api/pow-sessions',
+      studySessions: '/api/study-sessions', // 하위 호환성 alias
       accumulatedSats: '/api/accumulated-sats',
       meetups: '/api/meetups',
       blink: '/api/blink',
@@ -49,7 +50,8 @@ app.route('/api/donations', donationsRouter);
 app.route('/api/discord', discordRouter);
 app.route('/api/discord-posts', discordPostsRouter);
 app.route('/api/users', usersRouter);
-app.route('/api/study-sessions', studySessionsRouter);
+app.route('/api/pow-sessions', powSessionsRouter);
+app.route('/api/study-sessions', powSessionsRouter); // 하위 호환성 alias
 app.route('/api/accumulated-sats', accumulatedSatsRouter);
 app.route('/api/meetups', meetupsRouter);
 app.route('/api/blink', blinkRouter);

@@ -9,7 +9,7 @@ const app = new Hono<{ Bindings: Env }>();
 app.get('/top', async (c) => {
   try {
     const limit = c.req.query('limit') || '50';
-    const category = c.req.query('category'); // donation_mode 필터
+    const category = c.req.query('category'); // pow_fields 필터
     const supabase = createSupabaseClient(c.env);
 
     // 모든 기부 데이터 가져오기 (분야 필터링 포함)
@@ -29,7 +29,7 @@ app.get('/top', async (c) => {
 
     // 분야별 필터링
     if (category && category !== 'all') {
-      query = query.eq('donation_mode', category);
+      query = query.eq('pow_fields', category);
     }
 
     const { data: donations, error } = await query;
@@ -161,7 +161,7 @@ app.get('/user/:discordId', async (c) => {
   try {
     const discordId = c.req.param('discordId');
     const month = c.req.query('month'); // YYYY-MM 형식
-    const category = c.req.query('category'); // donation_mode 필터
+    const category = c.req.query('category'); // pow_fields 필터
     const supabase = createSupabaseClient(c.env);
 
     const { data: userData, error: userError } = await supabase
@@ -181,7 +181,7 @@ app.get('/user/:discordId', async (c) => {
 
     // 분야별 필터링
     if (category && category !== 'all') {
-      query = query.eq('donation_mode', category);
+      query = query.eq('pow_fields', category);
     }
 
     // 월별 필터링
@@ -231,7 +231,7 @@ app.get('/user/:discordId', async (c) => {
 // ============================================
 // Algorithm v3: 간소화된 기부 스키마
 // - achievement_rate, total_donated_sats, total_accumulated_sats: 저장 안함 (런타임 계산)
-// - duration_*, goal_*: 저장 안함 (study_sessions에서 참조)
+// - duration_*, goal_*: 저장 안함 (pow_sessions에서 참조)
 // - 3단계 status: pending → paid → completed
 // ============================================
 const createDonationSchema = z.object({
@@ -240,13 +240,17 @@ const createDonationSchema = z.object({
   // 기부 정보
   amount: z.number().int().positive(),
   currency: z.string().default('SAT'),
-  donation_mode: z.string().default('pow-writing'),
-  donation_scope: z.string().default('session'),
+  pow_fields: z.string().default('pow-writing'),
+  donation_mode: z.string().default('session'), // 'session' | 'total'
   note: z.string().optional().nullable(),
 
   // POW 정보 (간소화 - 참조용)
-  plan_text: z.string().optional().nullable(),
+  pow_plan_text: z.string().optional().nullable(),
   photo_url: z.string().optional().nullable(),
+
+  // 하위 호환성 alias
+  donation_scope: z.string().optional(), // → donation_mode
+  plan_text: z.string().optional().nullable(), // → pow_plan_text
 
   // 누적 정보 (기부 시점 스냅샷 - 표시용)
   accumulated_sats: z.number().int().min(0).optional().nullable(),
@@ -255,10 +259,13 @@ const createDonationSchema = z.object({
   transaction_id: z.string().optional().nullable(),
   status: z.enum(['pending', 'paid', 'completed', 'failed', 'cancelled']).default('pending'),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  session_id: z.string().uuid().optional().nullable(), // study_sessions FK
+  session_id: z.string().uuid().optional().nullable(), // pow_sessions FK
 
   // Deprecated (하위 호환성)
   message: z.string().optional().nullable(),
+  donationMode: z.string().optional(), // → pow_fields (camelCase alias)
+  donationScope: z.string().optional(), // → donation_mode (camelCase alias)
+  planText: z.string().optional().nullable(), // → pow_plan_text (camelCase alias)
   duration_minutes: z.number().int().min(0).optional().nullable(),
   duration_seconds: z.number().int().min(0).optional().nullable(),
   goal_minutes: z.number().int().min(0).optional().nullable(),
@@ -283,6 +290,11 @@ app.post('/', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
+    // 하위 호환성 매핑
+    const powFields = validated.pow_fields || validated.donationMode || 'pow-writing';
+    const donationMode = validated.donation_mode || validated.donationScope || validated.donation_scope || 'session';
+    const powPlanText = validated.pow_plan_text || validated.planText || validated.plan_text || null;
+
     // Algorithm v3: 간소화된 insert
     // - achievement_rate, total_donated_sats, total_accumulated_sats: 저장 안함
     // - paid_at: status가 'paid'인 경우 현재 시간
@@ -290,10 +302,10 @@ app.post('/', async (c) => {
       user_id: userData.id,
       amount: validated.amount,
       currency: validated.currency,
-      donation_mode: validated.donation_mode,
-      donation_scope: validated.donation_scope,
+      pow_fields: powFields,
+      donation_mode: donationMode,
       note: validated.note || validated.message || null,
-      plan_text: validated.plan_text,
+      pow_plan_text: powPlanText,
       photo_url: validated.photo_url,
       accumulated_sats: validated.accumulated_sats,
       transaction_id: validated.transaction_id,
@@ -320,8 +332,8 @@ app.post('/', async (c) => {
     }
 
     // 랭킹 캐시 무효화 (해당 분야 + 전체)
-    if (validated.donation_mode) {
-      await invalidateRankingsCacheByCategory(c.env.CACHE, validated.donation_mode);
+    if (powFields) {
+      await invalidateRankingsCacheByCategory(c.env.CACHE, powFields);
     }
 
     return c.json({

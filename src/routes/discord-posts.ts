@@ -24,7 +24,7 @@ app.get('/popular', async (c) => {
 
     // 분야별 필터링
     if (category && category !== 'all') {
-      query = query.eq('donation_mode', category);
+      query = query.eq('pow_fields', category);
     }
 
     const { data, error } = await query;
@@ -91,13 +91,13 @@ app.get('/:messageId', async (c) => {
 // ============================================
 const shareToDiscordSchema = z.object({
   discord_id: z.string(),
-  session_id: z.string(),
+  session_id: z.string().optional().nullable(), // 적립액 기부 시 null 가능
   photo_url: z.string(),
-  plan_text: z.string(),
-  donation_mode: z.string(),
+  pow_plan_text: z.string().optional(),
+  pow_fields: z.string().optional(),
   duration_seconds: z.number().int().min(0),
   // 기부 정보
-  donation_scope: z.string().optional(),
+  donation_mode: z.string().optional(), // 'session' | 'total' (기부 범위)
   donation_sats: z.number().int().optional(),
   total_donated_sats: z.number().int().optional(),
   total_accumulated_sats: z.number().int().optional(),
@@ -105,6 +105,9 @@ const shareToDiscordSchema = z.object({
   // 동영상 첨부 (선택)
   video_url: z.string().nullable().optional(),
   video_filename: z.string().nullable().optional(),
+  // 하위 호환성 alias
+  plan_text: z.string().optional(), // → pow_plan_text
+  donation_scope: z.string().optional(), // → donation_mode
 });
 
 app.post('/share', async (c) => {
@@ -132,6 +135,10 @@ app.post('/share', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
+    // 하위 호환성: pow_fields 우선, donation_mode fallback (구 필드명일 때만)
+    const powFields = validated.pow_fields || 'pow-writing';
+    const planText = validated.pow_plan_text || validated.plan_text || '';
+
     // 분야 이름 매핑 (이모티콘 포함)
     const categoryNames: Record<string, string> = {
       'pow-writing': '✒️ 글쓰기',
@@ -141,7 +148,7 @@ app.post('/share', async (c) => {
       'pow-reading': '📚 독서',
       'pow-service': '✝️ 봉사',
     };
-    const categoryName = categoryNames[validated.donation_mode] || '📝 공부';
+    const categoryName = categoryNames[powFields] || '📝 공부';
 
     // ⭐️ BECA 총액 조회 (Blink API 실시간 잔액)
     let becaBalance: number | null = null;
@@ -171,8 +178,8 @@ app.post('/share', async (c) => {
       console.error('❌ Blink API 잔액 조회 실패:', error);
     }
 
-    // 기부 모드에 따라 메시지 형식 변경
-    const donationScope = validated.donation_scope || 'total';
+    // 기부 모드에 따라 메시지 형식 변경 (donation_mode: 'session' | 'total')
+    const donationModeValue = validated.donation_mode || validated.donation_scope || 'total';
     const donationSats = validated.donation_sats || 0;
     const totalDonatedSats = validated.total_donated_sats || 0;
     const totalAccumulatedSats = validated.total_accumulated_sats || 0;
@@ -186,10 +193,10 @@ app.post('/share', async (c) => {
 
     let messageText = '';
 
-    if (donationScope === 'session') {
+    if (donationModeValue === 'session') {
       // 즉시 기부
       messageText = `<@${validated.discord_id}>님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 기부 완료! 현재 Citadel POW BECA ${becaBalanceText}!`;
-    } else if (donationScope === 'total') {
+    } else if (donationModeValue === 'total') {
       // 적립 후 기부
       messageText = `<@${validated.discord_id}>님께서 "${categoryName}"에서 POW 완료 후, ${donationSats}sats 적립! 총 적립액 ${totalAccumulatedSats}sats!`;
     } else {
@@ -293,10 +300,10 @@ app.post('/share', async (c) => {
         message_id: messageId,
         channel_id: POW_CHANNEL_ID,
         user_id: user.id,
-        session_id: validated.session_id,
+        session_id: validated.session_id || null,
         photo_url: validated.photo_url,
-        plan_text: validated.plan_text,
-        donation_mode: validated.donation_mode,
+        pow_plan_text: planText,
+        pow_fields: powFields,
         reaction_count: 0,
         reactions: {},
       })
@@ -309,11 +316,13 @@ app.post('/share', async (c) => {
       console.log('✅ discord_posts 저장 성공:', messageId);
     }
 
-    // study_sessions에 discord_message_id 업데이트
-    await supabase
-      .from('study_sessions')
-      .update({ discord_message_id: messageId })
-      .eq('id', validated.session_id);
+    // pow_sessions에 discord_message_id 업데이트 (session_id가 있는 경우만)
+    if (validated.session_id) {
+      await supabase
+        .from('pow_sessions')
+        .update({ discord_message_id: messageId })
+        .eq('id', validated.session_id);
+    }
 
     return c.json({
       success: true,
@@ -340,6 +349,9 @@ const createDiscordPostSchema = z.object({
   discord_id: z.string(),
   session_id: z.string().optional().nullable(),
   photo_url: z.string().optional().nullable(),
+  pow_plan_text: z.string().optional().nullable(),
+  pow_fields: z.string().optional().nullable(),
+  // 하위 호환성 alias
   plan_text: z.string().optional().nullable(),
   donation_mode: z.string().optional().nullable(),
 });
@@ -361,6 +373,10 @@ app.post('/', async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
+    // 하위 호환성 매핑
+    const powFields = validated.pow_fields || validated.donation_mode || null;
+    const powPlanText = validated.pow_plan_text || validated.plan_text || null;
+
     // Discord 게시물 삽입
     const { data, error } = await supabase
       .from('discord_posts')
@@ -370,8 +386,8 @@ app.post('/', async (c) => {
         user_id: user.id,
         session_id: validated.session_id,
         photo_url: validated.photo_url,
-        plan_text: validated.plan_text,
-        donation_mode: validated.donation_mode,
+        pow_plan_text: powPlanText,
+        pow_fields: powFields,
         reaction_count: 0,
         reactions: {},
       })
@@ -383,10 +399,10 @@ app.post('/', async (c) => {
       return c.json({ error: error.message }, 500);
     }
 
-    // study_sessions에 discord_message_id 업데이트 (session_id가 있는 경우)
+    // pow_sessions에 discord_message_id 업데이트 (session_id가 있는 경우)
     if (validated.session_id) {
       await supabase
-        .from('study_sessions')
+        .from('pow_sessions')
         .update({ discord_message_id: validated.message_id })
         .eq('id', validated.session_id);
     }

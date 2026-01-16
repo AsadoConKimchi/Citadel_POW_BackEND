@@ -41,12 +41,12 @@ export interface Donation {
   // 기부 정보
   amount: number;                // 기부금액 (sats)
   currency: string;              // 'SAT'
-  donation_mode: string;         // POW 분야
-  donation_scope: string;        // 'session' | 'total'
+  pow_fields: string;            // POW 분야 (pow-writing, pow-music, etc.)
+  donation_mode: string;         // 'session' | 'total' (기부 범위)
   note?: string;                 // 기부메모 (null 가능)
 
   // POW 정보 (기부 시점 스냅샷)
-  plan_text?: string;            // 오늘의 목표
+  pow_plan_text?: string;        // 오늘의 목표
   duration_minutes?: number;     // 달성시간
   duration_seconds?: number;     // 달성시간 (초)
   goal_minutes?: number;         // 목표시간
@@ -75,10 +75,10 @@ export interface DiscordPost {
   message_id: string;            // Discord 메시지 ID (unique)
   channel_id: string;
   user_id: string;
-  session_id?: string;           // 연결된 study_session ID (nullable)
+  session_id?: string;           // 연결된 pow_session ID (nullable)
   photo_url?: string;            // 인증카드 이미지 URL
-  plan_text?: string;            // 목표 텍스트
-  donation_mode?: string;        // POW 분야
+  pow_plan_text?: string;        // 목표 텍스트
+  pow_fields?: string;           // POW 분야 (pow-writing, pow-music, etc.)
   reaction_count: number;        // 총 반응 수
   reactions: Record<string, number>; // 반응 상세 { "👍": 5, "❤️": 3 }
   created_at: string;
@@ -92,15 +92,15 @@ export interface PopularPost {
   user_id: string;
   session_id?: string;
   photo_url?: string;
-  plan_text?: string;
-  donation_mode?: string;
+  pow_plan_text?: string;
+  pow_fields?: string;
   reaction_count: number;
   reactions: Record<string, number>;
   created_at: string;
   // User 정보 (JOIN)
   discord_username: string;
   discord_avatar?: string;
-  // StudySession 정보 (LEFT JOIN)
+  // PowSession 정보 (LEFT JOIN)
   duration_minutes?: number;
   goal_minutes?: number;
   achievement_rate?: number;
@@ -136,13 +136,13 @@ export interface RankingEntry {
   last_activity_at?: string;
 }
 
-export interface StudySession {
+export interface PowSession {
   id: string;
   user_id: string;
 
   // POW 정보
-  donation_mode: string;         // POW 분야 (pow-writing, pow-music, etc.)
-  plan_text: string;             // 오늘의 목표
+  pow_fields: string;            // POW 분야 (pow-writing, pow-music, etc.)
+  pow_plan_text: string;         // 오늘의 목표
 
   // 시간 정보
   start_time: string;
@@ -164,6 +164,9 @@ export interface StudySession {
   created_at: string;
 }
 
+// 하위 호환성 alias
+export type StudySession = PowSession;
+
 export interface UserStudyStats {
   discord_username: string;
   discord_avatar?: string;
@@ -180,9 +183,9 @@ export interface AccumulatedSats {
   date: string; // YYYY-MM-DD
   total_seconds: number;
   total_sats: number;
-  plan_text?: string;
+  pow_plan_text?: string;
   goal_minutes?: number;
-  donation_mode: string;
+  pow_fields: string;
   note?: string;
   created_at: string;
   updated_at: string;
@@ -200,7 +203,7 @@ export interface GroupMeetup {
   title: string;
   description?: string;
   image_url?: string;
-  donation_mode: string;
+  pow_fields: string;
 
   // Schedule
   scheduled_at: string;
@@ -250,7 +253,7 @@ export interface MeetupWithStats {
   title: string;
   description?: string;
   image_url?: string;
-  donation_mode: string;
+  pow_fields: string;
   scheduled_at: string;
   duration_minutes: number;
   target_donation_amount: number;
