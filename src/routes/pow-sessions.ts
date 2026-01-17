@@ -211,6 +211,9 @@ app.get('/today/:discordId', async (c) => {
 const createPowSessionSchema = z.object({
   discord_id: z.string(),
 
+  // Option A: 프론트엔드에서 생성한 UUID를 DB id로 사용
+  session_id: z.string().uuid().optional().nullable(),
+
   // POW 정보
   pow_fields: z.string(),
   pow_plan_text: z.string(),
@@ -267,23 +270,31 @@ app.post('/', async (c) => {
     const powFields = validated.pow_fields || validated.donation_mode || 'pow-writing';
     const powPlanText = validated.pow_plan_text || validated.plan_text || '';
 
-    // Algorithm v3: POW 세션 생성 (achievement_rate, donation_id 저장 안함)
+    // Algorithm v3 + Option A: POW 세션 생성
+    // session_id가 있으면 해당 UUID를 DB id로 사용
+    const insertData: any = {
+      user_id: userData.id,
+      pow_fields: powFields,
+      pow_plan_text: powPlanText,
+      start_time: validated.start_time,
+      end_time: validated.end_time,
+      duration_seconds: durationSeconds,
+      duration_minutes: durationMinutes,
+      goal_seconds: goalSeconds,
+      goal_minutes: goalMinutes,
+      photo_url: validated.photo_url,
+      // achievement_rate: 저장 안함 (런타임 계산)
+      // donation_id: 저장 안함 (donations.session_id로 단방향 참조)
+    };
+
+    // Option A: 프론트엔드에서 UUID를 전달한 경우 해당 ID 사용
+    if (validated.session_id) {
+      insertData.id = validated.session_id;
+    }
+
     const { data, error } = await supabase
       .from('pow_sessions')
-      .insert({
-        user_id: userData.id,
-        pow_fields: powFields,
-        pow_plan_text: powPlanText,
-        start_time: validated.start_time,
-        end_time: validated.end_time,
-        duration_seconds: durationSeconds,
-        duration_minutes: durationMinutes,
-        goal_seconds: goalSeconds,
-        goal_minutes: goalMinutes,
-        photo_url: validated.photo_url,
-        // achievement_rate: 저장 안함 (런타임 계산)
-        // donation_id: 저장 안함 (donations.session_id로 단방향 참조)
-      })
+      .insert(insertData)
       .select()
       .single();
 
