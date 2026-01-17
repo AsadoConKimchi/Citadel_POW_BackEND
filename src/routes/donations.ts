@@ -269,6 +269,7 @@ const createDonationSchema = z.object({
   duration_minutes: z.number().int().min(0).optional().nullable(),
   duration_seconds: z.number().int().min(0).optional().nullable(),
   goal_minutes: z.number().int().min(0).optional().nullable(),
+  goal_seconds: z.number().int().min(0).optional().nullable(), // 목표 시간 (초)
   achievement_rate: z.number().min(0).max(200).optional().nullable(),
   total_accumulated_sats: z.number().int().min(0).optional().nullable(),
   total_donated_sats: z.number().int().min(0).optional().nullable(),
@@ -298,6 +299,7 @@ app.post('/', async (c) => {
     // Algorithm v3: 간소화된 insert
     // - achievement_rate, total_donated_sats, total_accumulated_sats: 저장 안함
     // - paid_at: status가 'paid'인 경우 현재 시간
+    // - goal_seconds: 목표 시간 (초 단위 통일)
     const insertData: Record<string, any> = {
       user_id: userData.id,
       amount: validated.amount,
@@ -312,6 +314,8 @@ app.post('/', async (c) => {
       status: validated.status,
       date: validated.date || new Date().toISOString().split('T')[0],
       session_id: validated.session_id,
+      // 시간 정보 (초 단위 통일)
+      goal_seconds: validated.goal_seconds || (validated.goal_minutes ? validated.goal_minutes * 60 : null),
       // discord_shared: 생성 시점에는 false (Discord 공유 후 true로 변경)
       discord_shared: false,
     };
