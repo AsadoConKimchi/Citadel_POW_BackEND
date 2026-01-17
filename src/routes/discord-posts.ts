@@ -150,32 +150,50 @@ app.post('/share', async (c) => {
     };
     const categoryName = categoryNames[powFields] || '📝 공부';
 
-    // ⭐️ BECA 총액 조회 (Blink API 실시간 잔액)
+    // ⭐️ BECA 총액 조회 (Blink GraphQL API 실시간 잔액)
     let becaBalance: number | null = null;
     try {
-      const BLINK_BALANCE_URL = c.env.BLINK_BALANCE_URL || 'https://api.blink.sv/v1/wallet/balance';
+      const BLINK_API_ENDPOINT = c.env.BLINK_API_ENDPOINT || 'https://api.blink.sv/graphql';
       const BLINK_API_KEY = c.env.BLINK_API_KEY;
 
       if (BLINK_API_KEY) {
-        const balanceResponse = await fetch(BLINK_BALANCE_URL, {
-          method: 'GET',
+        const graphqlQuery = {
+          query: `
+            query Me {
+              me {
+                defaultAccount {
+                  wallets {
+                    walletCurrency
+                    balance
+                  }
+                }
+              }
+            }
+          `
+        };
+
+        const balanceResponse = await fetch(BLINK_API_ENDPOINT, {
+          method: 'POST',  // GraphQL은 항상 POST
           headers: {
-            'Authorization': `Bearer ${BLINK_API_KEY}`,
             'Content-Type': 'application/json',
+            'X-API-KEY': BLINK_API_KEY,  // Blink API는 X-API-KEY 헤더 사용
           },
+          body: JSON.stringify(graphqlQuery),
           signal: AbortSignal.timeout(3000), // 3초 타임아웃
         });
 
         if (balanceResponse.ok) {
-          const balanceData = await balanceResponse.json();
-          becaBalance = balanceData.balance || null;
-          console.log(`✅ Blink API 잔액 조회 성공: ${becaBalance} sats`);
+          const balanceData = await balanceResponse.json() as any;
+          const wallets = balanceData?.data?.me?.defaultAccount?.wallets || [];
+          const btcWallet = wallets.find((w: any) => w.walletCurrency === 'BTC');
+          becaBalance = btcWallet?.balance ?? null;
+          console.log(`✅ Blink GraphQL 잔액 조회 성공: ${becaBalance} sats`);
         } else {
-          console.error('❌ Blink API 응답 오류:', balanceResponse.status);
+          console.error('❌ Blink GraphQL 응답 오류:', balanceResponse.status);
         }
       }
     } catch (error) {
-      console.error('❌ Blink API 잔액 조회 실패:', error);
+      console.error('❌ Blink GraphQL 잔액 조회 실패:', error);
     }
 
     // 기부 모드에 따라 메시지 형식 변경 (donation_mode: 'session' | 'total')
@@ -206,7 +224,7 @@ app.post('/share', async (c) => {
 
     // 기부 메모 추가
     if (donationNote) {
-      messageText += `\n\n<@${validated.discord_id}>님의 한마디 : "${donationNote}"`;
+      messageText += `\n<@${validated.discord_id}>님의 한마디 : "${donationNote}"`;
     }
 
     // photo_url 유효성 검사 (빈 문자열, null, undefined 모두 거름)
@@ -316,11 +334,14 @@ app.post('/share', async (c) => {
       console.log('✅ discord_posts 저장 성공:', messageId);
     }
 
-    // pow_sessions에 discord_message_id 업데이트 (session_id가 있는 경우만)
+    // pow_sessions에 discord_message_id + status 업데이트 (session_id가 있는 경우만)
     if (validated.session_id) {
       await supabase
         .from('pow_sessions')
-        .update({ discord_message_id: messageId })
+        .update({
+          discord_message_id: messageId,
+          status: 'completed'  // Discord 공유 완료 시 status 업데이트
+        })
         .eq('id', validated.session_id);
     }
 
